@@ -3524,7 +3524,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     if (inv) {
                         material.invId = inv.id;
                         material.name = inv.name;
-                        material.unit = inv.unit || material.unit || 'Pcs';
+                        material.unit = material.unit || inv.unit || 'Pcs';
                     }
                 });
             });
@@ -3554,7 +3554,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 (order.materialsUsed || []).forEach(material => {
                     if (material.invId === inventoryItem.id) {
                         material.name = inventoryItem.name;
-                        material.unit = inventoryItem.unit || material.unit || 'Pcs';
+                        material.unit = material.unit || inventoryItem.unit || 'Pcs';
                     }
                 });
             });
@@ -3564,7 +3564,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 (data.materialsUsed || []).forEach(material => {
                     if (material.invId === inventoryItem.id) {
                         material.name = inventoryItem.name;
-                        material.unit = inventoryItem.unit || material.unit || 'Pcs';
+                        material.unit = material.unit || inventoryItem.unit || 'Pcs';
                     }
                 });
             });
@@ -3813,7 +3813,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             }).join('');
             document.getElementById('modal-content').innerHTML=`
                 <div class="flex items-start justify-between gap-2 border-b pb-2 mb-2"><div class="min-w-0"><span class="text-[9px] font-extrabold uppercase text-brand-600">Inventory / Movement Details</span><h3 class="text-sm font-extrabold text-slate-900 break-words">${safeDisplay(item.name)}</h3><p class="text-[10px] text-slate-500">${safeDisplay(item.category||'Uncategorized')}</p></div><button type="button" onclick="closeModal()" aria-label="Close movement details" class="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 shrink-0"><i class="fa-solid fa-xmark"></i></button></div>
-                <div class="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2 mb-2"><div><span class="text-[9px] font-bold text-slate-500">CURRENT STOCK</span><div class="text-sm font-extrabold ${currentStock<=threshold?'text-amber-700':'text-slate-900'}">${currentStock} ${safeDisplay(item.unit)} <span class="font-medium text-[10px] text-slate-500">(Min: ${threshold})</span></div><p class="text-[9px] text-slate-500">Unit cost: ₱${groupThousands(Number(item.cost||0).toFixed(2))}</p></div><button type="button" onclick="openRestockModal('${item.id}')" class="px-2 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-extrabold">+ Restock</button></div>
+                <div class="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2 mb-2"><div><span class="text-[9px] font-bold text-slate-500">CURRENT STOCK</span><div class="text-sm font-extrabold ${currentStock<=threshold?'text-amber-700':'text-slate-900'}">${safeDisplay(materialPackStockText(item))} <span class="font-medium text-[10px] text-slate-500">${materialPackSize(item) ? `(${materialAmountLabel(currentStock)} ${safeDisplay(item.unit)} total) · ` : ''}Min: ${threshold} ${safeDisplay(item.unit)}</span></div><p class="text-[9px] text-slate-500">Unit cost: ₱${groupThousands(Number(item.cost||0).toFixed(2))}</p></div><button type="button" onclick="openRestockModal('${item.id}')" class="px-2 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-extrabold">+ Restock</button></div>
                 <div class="flex items-center justify-between gap-2 mb-1"><h4 class="text-[10px] font-extrabold uppercase text-slate-700">Stock movement timeline (${movements.length})</h4></div>
                 <div class="inventory-movement-timeline">${rows||'<p class="p-3 text-[10px] text-slate-500 text-center">No recorded movements yet.</p>'}</div>
                 <p class="mt-1 text-[9px] text-slate-400">History starts when movement tracking was enabled. Earlier stock changes are not reconstructed. Only the most recent 1,000 movements are retained.</p>
@@ -5218,7 +5218,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
 
             // No prefilled materials on new orders; only load existing materials if editing an existing order
             if (template && Array.isArray(template.materialsUsed) && template.materialsUsed.length > 0) {
-                orderModalMaterials = template.materialsUsed.map(m => ({ invId: m.invId || '', name: m.name || '', qty: Number(m.qty) || 1 }));
+                orderModalMaterials = template.materialsUsed.map(m => ({ invId: m.invId || '', name: m.name || '', qty: materialQtyForCurrentStock(m, findInventoryForMaterial(m)) || 1 }));
             } else {
                 orderModalMaterials = [];
             }
@@ -5580,7 +5580,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     // Return old materials first, then deduct new materials
                     (existingOrd.materialsUsed || []).forEach(oldM => {
                         const inv = appState.inventory.find(i => i.id === oldM.invId);
-                        if (inv) inv.stock = Number(inv.stock) + Number(oldM.qty);
+                        if (inv) inv.stock = Number(inv.stock) + materialQtyForCurrentStock(oldM, inv);
                     });
                     newMaterialsUsed.forEach(newM => {
                         const inv = appState.inventory.find(i => i.id === newM.invId);
@@ -5676,9 +5676,10 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     const inv = appState.inventory.find(i => i.id === m.invId);
                     if (inv) {
                         const before = Number(inv.stock);
-                        inv.stock = before + Number(m.qty);
-                        recordInventoryMovement(inv,'Order Deleted / Stock Returned',Number(m.qty),before,inv.stock,{orderId:ord.id,orderNo:ordNo,customer:ord.customer});
-                        logActivity('Inventory', `Restored ${m.qty} ${inv.unit} of ${inv.name}`, `Stock: ${before} → ${inv.stock} ${inv.unit} (Deleted Order ${ordNo}: ${ord.customer})`);
+                        const returnedQty = materialQtyForCurrentStock(m, inv);
+                        inv.stock = before + returnedQty;
+                        recordInventoryMovement(inv,'Order Deleted / Stock Returned',returnedQty,before,inv.stock,{orderId:ord.id,orderNo:ordNo,customer:ord.customer});
+                        logActivity('Inventory', `Restored ${returnedQty} ${inv.unit} of ${inv.name}`, `Stock: ${before} → ${inv.stock} ${inv.unit} (Deleted Order ${ordNo}: ${ord.customer})`);
                     }
                 });
             }
@@ -6217,6 +6218,38 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             saveState();
         }
 
+        // Pack tracking uses the existing stock and unit-cost fields in *individual* units.
+        // The pack count is always derived; no parallel counter can become inconsistent.
+        function materialPackSize(item) {
+            const value = Number(item && item.packSize);
+            return Number.isSafeInteger(value) && value > 1 ? value : 0;
+        }
+        function materialPackBreakdown(item, amount = item?.stock) {
+            const size = materialPackSize(item);
+            const total = Math.max(0, Number(amount) || 0);
+            if (!size) return null;
+            const fullPacks = Math.floor(total / size);
+            const loose = Number((total - fullPacks * size).toFixed(5));
+            return { size, fullPacks, loose, total };
+        }
+        function materialAmountLabel(n) {
+            const value = Number(n) || 0;
+            return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+        }
+        // Historical orders may have recorded consumption in packs before a material
+        // was explicitly switched to individual-unit inventory. Preserve the old
+        // order record but convert quantities when adjusting present-day stock.
+        function materialQtyForCurrentStock(material, inv) {
+            const qty = Number(material?.qty || 0);
+            return materialPackSize(inv) && /^packs?$/i.test(material?.unit || '') ? qty * materialPackSize(inv) : qty;
+        }
+        function materialPackStockText(item) {
+            const parts = materialPackBreakdown(item);
+            if (!parts) return `${materialAmountLabel(item.stock)} ${item.unit || 'Pcs'}`;
+            const label = parts.fullPacks === 1 ? 'pack' : 'packs';
+            return `${parts.fullPacks} ${label}${parts.loose ? ` + ${materialAmountLabel(parts.loose)} ${String(item.unit || 'sheets').toLowerCase()}` : ''}`;
+        }
+
         // ================= VIEW 5: INVENTORY & RAW MATERIALS =================
         function renderInventory() {
             const wrap = document.getElementById('inventory-list-wrap');
@@ -6279,7 +6312,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                             </div>
                             <h4 class="font-bold text-slate-900 text-sm mt-0.5 truncate">${item.name}</h4>
                             <p class="inventory-stockline text-[11px] text-slate-500">
-                                Stock: <strong class="text-slate-900">${item.stock} ${item.unit}</strong><span class="compact-secondary"> (Min: ${item.minStock ?? 5}) • Unit Cost: <strong>₱${groupThousands(Number(item.cost).toFixed(2))}</strong></span>
+                                Stock: <strong class="text-slate-900">${safeDisplay(materialPackStockText(item))}</strong><span class="compact-secondary"> ${materialPackSize(item) ? `(${materialAmountLabel(item.stock)} ${safeDisplay(item.unit)} total) · ` : ''}Min: ${item.minStock ?? 5} ${safeDisplay(item.unit)} • Unit Cost: <strong>₱${groupThousands(Number(item.cost).toFixed(2))}</strong></span>
                             </p>
                         </div>
                         <div class="inventory-entry-actions flex items-center gap-1.5 shrink-0">
@@ -6295,7 +6328,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                                 <i class="fa-solid fa-trash-can"></i>
                             </button>
                         </div>
-                        <div class="compact-secondary compact-details">Current stock: <strong>${item.stock} ${item.unit}</strong> · Minimum: ${item.minStock ?? 5} · Unit cost: <strong>₱${groupThousands(Number(item.cost||0).toFixed(2))}</strong><div class="mt-1 text-[9px] text-slate-500">${materialMovementsFor(item.id).length} recorded stock events · Tap the blue <strong>i</strong> to inspect movements and linked orders.</div></div>
+                        <div class="compact-secondary compact-details">Current stock: <strong>${safeDisplay(materialPackStockText(item))}</strong>${materialPackSize(item) ? ` (${materialAmountLabel(item.stock)} ${safeDisplay(item.unit)} total)` : ''} · Minimum: ${item.minStock ?? 5} ${safeDisplay(item.unit)} · Unit cost: <strong>₱${groupThousands(Number(item.cost||0).toFixed(2))}</strong>${materialPackSize(item) ? ` · Pack cost: <strong>₱${groupThousands((Number(item.cost||0)*materialPackSize(item)).toFixed(2))}</strong>` : ''}<div class="mt-1 text-[9px] text-slate-500">${materialMovementsFor(item.id).length} recorded stock events · Tap the blue <strong>i</strong> to inspect movements and linked orders.</div></div>
                     </div>
                 `;
             }).join('');
@@ -6329,7 +6362,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                         </div>
                     </div>
                     <div class="two-col-grid">
-                        <div>
+                        <div id="inv-standard-stock-wrap">
                             <label class="block font-bold uppercase text-slate-600 mb-1">${existing ? 'Current Stock' : 'Initial Stock'}</label>
                             <input type="number" id="inv-stock" value="${existing ? Number(existing.stock) : 10}" required class="w-full px-3 py-2 border rounded-xl outline-none font-bold">
                         </div>
@@ -6338,10 +6371,48 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                             <input type="number" id="inv-min" value="${existing ? Number(existing.minStock ?? 5) : 5}" required class="w-full px-3 py-2 border rounded-xl outline-none">
                         </div>
                     </div>
-                    <div>
+                    <div id="inv-standard-cost-wrap">
                         <label class="block font-bold uppercase text-slate-600 mb-1">Cost Per Unit (₱)</label>
-                        <input type="number" step="0.01" id="inv-cost" value="${existing ? Number(existing.cost).toFixed(2) : '0.00'}" required class="w-full px-3 py-2 border rounded-xl outline-none font-bold">
-                        <span class="text-[10px] text-slate-400 block mt-1">Updating unit cost automatically updates estimated COGS in linked Product Library presets.</span>
+                        <input type="number" step="0.0001" min="0" id="inv-cost" value="${existing ? Number(existing.cost).toFixed(4) : '0.0000'}" required class="w-full px-3 py-2 border rounded-xl outline-none font-bold">
+                        <span class="text-[10px] text-slate-400 block mt-1">Used to calculate order material costs and Product Library estimates.</span>
+                    </div>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 space-y-2">
+                        <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-700">
+                            <input type="checkbox" id="inv-pack-enabled" class="accent-blue-600" ${existing && materialPackSize(existing) ? 'checked' : ''} onchange="updateInventoryPackFields('toggle')">
+                            Track full packs + loose ${safeDisplay(existing?.unit && !/^packs?$/i.test(existing.unit) ? existing.unit.toLowerCase() : 'sheets')}
+                        </label>
+                        <div id="inv-pack-controls" class="hidden space-y-2">
+                            <div id="inv-pack-conversion-wrap" class="hidden rounded-lg bg-amber-50 border border-amber-200 p-2 space-y-1">
+                                <label class="text-[10px] font-bold text-amber-800">How is the CURRENT saved stock counted?</label>
+                                <select id="inv-pack-conversion" onchange="updateInventoryPackFields('conversion')" class="w-full border rounded-lg px-2 py-1.5 bg-white text-[11px]">
+                                    <option value="">Select before converting existing material...</option>
+                                    <option value="sheets">Already individual sheets / pieces (keep existing stock)</option>
+                                    <option value="packs">Full packs (convert into sheets / pieces)</option>
+                                </select>
+                                <p class="text-[10px] text-amber-800">No existing stock is multiplied unless you select full packs. Review linked product material quantities if previously entered in packs.</p>
+                            </div>
+                            <div class="two-col-grid">
+                                <div>
+                                    <label class="block font-bold text-[10px] text-slate-600 mb-1">${safeDisplay(existing?.unit && !/^packs?$/i.test(existing.unit) ? existing.unit : 'Sheets')} per pack (fixed)</label>
+                                    <input type="number" id="inv-pack-size" min="2" step="1" value="${materialPackSize(existing) || 20}" ${materialPackSize(existing) ? 'readonly title="Fixed for this material"' : ''} oninput="updateInventoryPackFields('size')" class="w-full px-2.5 py-1.5 border rounded-lg font-bold ${materialPackSize(existing) ? 'bg-slate-100' : 'bg-white'}">
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-[10px] text-slate-600 mb-1">Cost per pack (₱)</label>
+                                    <input type="number" id="inv-pack-cost" min="0" step="0.0001" value="${existing && materialPackSize(existing) ? (Number(existing.cost||0)*materialPackSize(existing)).toFixed(4) : '0.0000'}" oninput="updateInventoryPackPreview()" class="w-full px-2.5 py-1.5 border rounded-lg font-bold">
+                                </div>
+                            </div>
+                            <div class="two-col-grid">
+                                <div>
+                                    <label class="block font-bold text-[10px] text-slate-600 mb-1">Full packs in stock</label>
+                                    <input type="number" id="inv-pack-count" min="0" step="1" value="${existing && materialPackSize(existing) ? materialPackBreakdown(existing).fullPacks : 0}" oninput="updateInventoryPackPreview()" class="w-full px-2.5 py-1.5 border rounded-lg font-bold">
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-[10px] text-slate-600 mb-1">Loose ${safeDisplay(existing?.unit && !/^packs?$/i.test(existing.unit) ? existing.unit : 'sheets')} in stock</label>
+                                    <input type="number" id="inv-loose-count" min="0" step="any" value="${existing && materialPackSize(existing) ? materialAmountLabel(materialPackBreakdown(existing).loose) : 0}" oninput="updateInventoryPackPreview()" class="w-full px-2.5 py-1.5 border rounded-lg font-bold">
+                                </div>
+                            </div>
+                            <p id="inv-pack-preview" class="text-[10px] text-slate-600 font-semibold"></p>
+                        </div>
                     </div>
                     <div class="flex justify-end gap-2 pt-2 border-t">
                         <button type="button" onclick="closeModal()" class="px-4 py-2 bg-slate-100 rounded-xl font-semibold">Cancel</button>
@@ -6356,6 +6427,49 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 (picked) => { invCatInput.value = picked.label; }
             );
             document.getElementById('modal-backdrop').classList.remove('hidden');
+            updateInventoryPackFields('init');
+        }
+
+        function updateInventoryPackFields(reason = 'toggle') {
+            const enabled = !!document.getElementById('inv-pack-enabled')?.checked;
+            const existing = editingInventoryId ? appState.inventory.find(i => i.id === editingInventoryId) : null;
+            const alreadyTracked = !!materialPackSize(existing);
+            const packBlock = document.getElementById('inv-pack-controls');
+            const standardStock = document.getElementById('inv-standard-stock-wrap');
+            const standardCost = document.getElementById('inv-standard-cost-wrap');
+            const conversionWrap = document.getElementById('inv-pack-conversion-wrap');
+            const conversion = document.getElementById('inv-pack-conversion');
+            if (packBlock) packBlock.classList.toggle('hidden', !enabled);
+            if (standardStock) standardStock.classList.toggle('hidden', enabled);
+            if (standardCost) standardCost.classList.toggle('hidden', enabled);
+            if (conversionWrap) conversionWrap.classList.toggle('hidden', !(enabled && existing && !alreadyTracked));
+            if (conversion) conversion.required = !!(enabled && existing && !alreadyTracked);
+            const unit = document.getElementById('inv-unit');
+            if (enabled && unit && (!unit.value.trim() || /^packs?$/i.test(unit.value.trim()))) unit.value = 'Sheets';
+            const size = Number(document.getElementById('inv-pack-size')?.value || 0);
+            if (enabled && existing && !alreadyTracked && ['conversion','size','toggle'].includes(reason) && conversion?.value && Number.isSafeInteger(size) && size > 1) {
+                const oldIsPacks = conversion.value === 'packs';
+                const totalUnits = (Number(existing.stock) || 0) * (oldIsPacks ? size : 1);
+                const whole = Math.floor(totalUnits / size);
+                const loose = Math.round((totalUnits - whole*size)*1e5)/1e5;
+                document.getElementById('inv-pack-count').value = Math.max(0, whole);
+                document.getElementById('inv-loose-count').value = Math.max(0, loose);
+                document.getElementById('inv-pack-cost').value = (Number(existing.cost || 0) * (oldIsPacks ? 1 : size)).toFixed(4);
+                // Existing low stock alerts expressed in packs also need conversion to units.
+                document.getElementById('inv-min').value = (Number(existing.minStock ?? 5) * (oldIsPacks && /^packs?$/i.test(existing.unit || '') ? size : 1));
+            }
+            updateInventoryPackPreview();
+        }
+        function updateInventoryPackPreview() {
+            const el = document.getElementById('inv-pack-preview');
+            if (!el) return;
+            const size = Number(document.getElementById('inv-pack-size')?.value || 0);
+            const packs = Number(document.getElementById('inv-pack-count')?.value || 0);
+            const loose = Number(document.getElementById('inv-loose-count')?.value || 0);
+            const packCost = Number(document.getElementById('inv-pack-cost')?.value || 0);
+            const unit = document.getElementById('inv-unit')?.value.trim() || 'Sheets';
+            if (!(Number.isSafeInteger(size) && size > 1)) { el.textContent = 'Enter a whole number of units per pack.'; return; }
+            el.textContent = `${materialAmountLabel(packs*size+loose)} ${unit} total · ₱${groupThousands((packCost/size).toFixed(4))} per ${unit.replace(/s$/i,'').toLowerCase()}`;
         }
 
         function handleSaveInventory(e) {
@@ -6364,10 +6478,34 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             let newlyCreatedInventoryItem = null;
             const name = document.getElementById('inv-name').value.trim();
             const category = document.getElementById('inv-cat').value.trim();
-            const unit = document.getElementById('inv-unit').value.trim() || 'Pcs';
-            const stock = Number(document.getElementById('inv-stock').value) || 0;
-            const minStock = Number(document.getElementById('inv-min').value) || 5;
-            const cost = Number(document.getElementById('inv-cost').value) || 0;
+            const packEnabled = !!document.getElementById('inv-pack-enabled')?.checked;
+            const existingBefore = editingInventoryId ? appState.inventory.find(i=>i.id===editingInventoryId) : null;
+            const previousPackSize = materialPackSize(existingBefore);
+            const packSize = packEnabled ? Number(document.getElementById('inv-pack-size').value) : 0;
+            if (packEnabled && (!Number.isSafeInteger(packSize) || packSize < 2)) {
+                alert('Please enter a fixed whole number of sheets / units per pack (at least 2).'); return;
+            }
+            const conversion = document.getElementById('inv-pack-conversion')?.value || '';
+            if (packEnabled && existingBefore && !previousPackSize && !conversion) {
+                alert('Choose whether the current saved stock is counted as individual sheets or full packs. Nothing has been converted.'); return;
+            }
+            const unit = document.getElementById('inv-unit').value.trim() || (packEnabled ? 'Sheets' : 'Pcs');
+            if (packEnabled && /^packs?$/i.test(unit)) { alert('The inventory unit must be the individual item used in orders, e.g. Sheets, not Packs.'); return; }
+            const packCount = Number(document.getElementById('inv-pack-count')?.value || 0);
+            const looseCount = Number(document.getElementById('inv-loose-count')?.value || 0);
+            if (packEnabled && (!Number.isSafeInteger(packCount) || packCount < 0 || !Number.isFinite(looseCount) || looseCount < 0 || looseCount >= packSize)) {
+                alert(`Enter a whole number of full packs, with loose ${unit} between 0 and ${packSize-1}.`); return;
+            }
+            const stock = packEnabled ? Number((packCount*packSize + looseCount).toFixed(5)) : (Number(document.getElementById('inv-stock').value) || 0);
+            const minStock = Number(document.getElementById('inv-min').value) || 0;
+            const packCost = Number(document.getElementById('inv-pack-cost')?.value || 0);
+            const cost = packEnabled ? (packCost/packSize) : (Number(document.getElementById('inv-cost').value) || 0);
+            if (![stock,minStock,cost].every(Number.isFinite) || (packEnabled && (stock<0 || minStock<0 || cost<0))) {
+                alert('Please enter valid, non-negative stock quantities and costs.'); return;
+            }
+            const isConvertingPackStock = !!(packEnabled && existingBefore && !previousPackSize && conversion === 'packs');
+            const wasCountedAsPacks = isConvertingPackStock && /^packs?$/i.test(existingBefore.unit || '');
+            if (isConvertingPackStock && !confirm(`Convert saved material stock from ${existingBefore.stock} packs to ${stock} ${unit}? ${wasCountedAsPacks ? 'Linked product recipes will also be converted to individual units. ' : ''}Historical orders and their costs will not be recalculated.`)) return;
 
             if (editingInventoryId) {
                 const existing = appState.inventory.find(i => i.id === editingInventoryId);
@@ -6382,9 +6520,19 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     existing.stock = stock;
                     existing.minStock = minStock;
                     existing.cost = cost;
+                    if (packEnabled) existing.packSize = packSize;
+                    else delete existing.packSize;
+                    // When prior inventory AND linked recipes were expressed in packs,
+                    // convert recipes once so future orders still deduct the same physical amount.
+                    if (wasCountedAsPacks) {
+                        (appState.products||[]).forEach(prod => (prod.materials||[]).forEach(m=>{
+                            if (m.invId === existing.id || (!m.invId && normalizeLinkText(m.name) === normalizeLinkText(previousName))) m.qty = Number((Number(m.qty||0)*packSize).toFixed(5));
+                        }));
+                    }
                     if (normalizeLinkText(previousName) !== normalizeLinkText(name)) refreshInventoryReferenceNames(existing);
                     syncProductCostsWithInventory();
-                    if(stock!==prevStock) recordInventoryMovement(existing,'Manual Adjustment',stock-prevStock,prevStock,stock,{note:`Material edited${previousUnit!==unit?' • unit changed from '+previousUnit+' to '+unit:''}`});
+                    if (isConvertingPackStock && stock!==prevStock) recordInventoryMovement(existing,'Pack Unit Conversion',null,null,stock,{note:`Converted existing stock from ${prevStock} packs to ${stock} ${unit}. This is not a purchase.`});
+                    else if(stock!==prevStock) recordInventoryMovement(existing,'Manual Adjustment',stock-prevStock,prevStock,stock,{note:`Material edited${previousUnit!==unit?' • unit changed from '+previousUnit+' to '+unit:''}`});
                     if(prevCost!==cost) recordInventoryMovement(existing,'Unit Cost Changed',0,stock,stock,{oldCost:prevCost,newCost:cost,note:'Material unit cost updated'});
                     logActivity('Inventory', `Updated Material (${name})`, `Stock: ${prevStock} → ${stock} ${unit} • Unit Cost: ₱${groupThousands(prevCost.toFixed(2))} → ₱${groupThousands(cost.toFixed(2))}`);
                 }
@@ -6397,7 +6545,8 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     unit,
                     stock,
                     minStock,
-                    cost
+                    cost,
+                    ...(packEnabled ? { packSize } : {})
                 };
                 appState.inventory.unshift(item);
                 newlyCreatedInventoryItem = item;
@@ -6424,28 +6573,28 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 <form onsubmit="handleConfirmRestock(event, '${item.id}')" class="space-y-3 text-xs">
                     <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                         <p class="text-slate-700 font-semibold">${item.name}</p>
-                        <p class="text-[11px] text-slate-500 mt-0.5">Current Stock: <strong>${item.stock} ${item.unit}</strong> • Current Unit Cost: <strong>₱${groupThousands(Number(item.cost || 0).toFixed(2))}</strong></p>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Current Stock: <strong>${safeDisplay(materialPackStockText(item))}</strong>${materialPackSize(item) ? ` (${materialAmountLabel(item.stock)} ${safeDisplay(item.unit)} total)` : ''} • Unit Cost: <strong>₱${groupThousands(Number(item.cost || 0).toFixed(4))}</strong></p>
                     </div>
                     <div class="two-col-grid">
                         <div>
-                            <label class="block font-bold uppercase text-slate-600 mb-1">Quantity to Add (${item.unit})</label>
-                            <input type="number" id="restock-qty" min="1" value="10" oninput="calcRestockUnitCostFromTotal()" required class="w-full px-3 py-2 border rounded-xl outline-none font-bold">
+                            <label class="block font-bold uppercase text-slate-600 mb-1">${materialPackSize(item) ? 'Full packs to add' : `Quantity to Add (${safeDisplay(item.unit)})`}</label>
+                            <input type="number" id="restock-qty" min="1" step="1" value="${materialPackSize(item) ? 1 : 10}" oninput="calcRestockUnitCostFromTotal()" required class="w-full px-3 py-2 border rounded-xl outline-none font-bold">
                         </div>
                         <div>
-                            <label class="block font-bold uppercase text-brand-600 mb-1">New Unit Cost / Price (₱)</label>
-                            <input type="number" step="0.01" min="0" id="restock-cost" value="${Number(item.cost || 0).toFixed(2)}" required class="w-full px-3 py-2 border border-blue-200 rounded-xl outline-none font-extrabold text-brand-600 bg-blue-50/40">
+                            <label class="block font-bold uppercase text-brand-600 mb-1">${materialPackSize(item) ? 'Cost per pack (₱)' : 'New Unit Cost / Price (₱)'}</label>
+                            <input type="number" step="0.0001" min="0" id="restock-cost" value="${(Number(item.cost || 0)*(materialPackSize(item)||1)).toFixed(4)}" required class="w-full px-3 py-2 border border-blue-200 rounded-xl outline-none font-extrabold text-brand-600 bg-blue-50/40">
                         </div>
                     </div>
                     <div class="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 space-y-1.5">
                         <label class="block text-[10px] font-extrabold uppercase text-amber-800">
-                            <i class="fa-solid fa-calculator mr-1"></i> Optional: Bought a Pack / Roll at an Inflated Total Price?
+                            <i class="fa-solid fa-calculator mr-1"></i> ${materialPackSize(item) ? `Optional: total price for all purchased packs (${materialPackSize(item)} ${safeDisplay(item.unit)}/pack)` : 'Optional: Total Price Paid'}
                         </label>
                         <div class="flex items-center gap-2">
                             <input type="number" step="0.01" min="0" id="restock-pack-total" oninput="calcRestockUnitCostFromTotal()" placeholder="Enter Total Pack Price paid (₱)..." class="flex-1 px-3 py-1.5 border border-amber-200 bg-white rounded-xl outline-none">
-                            <span class="text-[10px] text-amber-700 font-bold shrink-0">Auto-divides by Qty</span>
+                            <span class="text-[10px] text-amber-700 font-bold shrink-0">Auto-divides by ${materialPackSize(item)?'packs':'qty'}</span>
                         </div>
                     </div>
-                    <p class="text-[10px] text-slate-400">If supplier prices went up, updating the Unit Cost above automatically updates your Inventory and recalculates estimated costs in your Product Library.</p>
+                    <p class="text-[10px] text-slate-400">${materialPackSize(item) ? `Each purchased pack adds ${materialPackSize(item)} ${safeDisplay(item.unit)}. Orders still consume individual ${safeDisplay(item.unit)} and costs are divided per unit.` : 'Updating unit cost recalculates Product Library material estimates.'}</p>
                     <div class="flex justify-end gap-2 pt-2 border-t">
                         <button type="button" onclick="closeModal()" class="px-4 py-2 bg-slate-100 rounded-xl font-semibold">Cancel</button>
                         <button type="submit" class="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-sm">Confirm Restock & Price</button>
@@ -6468,9 +6617,14 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             e.preventDefault();
             const item = appState.inventory.find(i => i.id === invId);
             if (!item) return;
-            const addQty = Math.max(1, Number(document.getElementById('restock-qty').value) || 0);
+            const requestedQty = Number(document.getElementById('restock-qty').value);
+            if (!Number.isSafeInteger(requestedQty) || requestedQty < 1) { alert('Enter a whole number of packs / units to restock.'); return; }
+            const size = materialPackSize(item);
+            const addQty = requestedQty * (size || 1);
             const newCostInput = document.getElementById('restock-cost');
-            const newCost = newCostInput ? Number(newCostInput.value) : Number(item.cost || 0);
+            const purchaseCost = newCostInput ? Number(newCostInput.value) : Number(item.cost || 0)*(size||1);
+            if (!Number.isFinite(purchaseCost) || purchaseCost < 0) { alert('Enter a valid cost.'); return; }
+            const newCost = purchaseCost / (size || 1);
             const oldCost = Number(item.cost || 0);
             const before = Number(item.stock);
             item.stock = before + addQty;
@@ -6478,8 +6632,8 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             syncProductCostsWithInventory();
 
             const priceChangeNote = newCost !== oldCost ? ` • Unit Price updated: ₱${groupThousands(oldCost.toFixed(2))} → ₱${groupThousands(newCost.toFixed(2))}` : '';
-            recordInventoryMovement(item,'Restock',addQty,before,item.stock,{note:'Supplier restock', ...(newCost!==oldCost?{oldCost,newCost}:{})});
-            logActivity('Inventory', `Restocked ${item.name}`, `Added +${addQty} ${item.unit} (${before} → ${item.stock} ${item.unit})${priceChangeNote}`);
+            recordInventoryMovement(item,'Restock',addQty,before,item.stock,{note:size ? `Supplier restock: +${requestedQty} packs × ${size} ${item.unit}` : 'Supplier restock', ...(newCost!==oldCost?{oldCost,newCost}:{})});
+            logActivity('Inventory', `Restocked ${item.name}`, `${size ? `Added ${requestedQty} full packs (+${addQty} ${item.unit})` : `Added +${addQty} ${item.unit}`} (${before} → ${item.stock} ${item.unit})${priceChangeNote}`);
             saveState();
             closeModal();
         }
@@ -9131,8 +9285,9 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                         const inv = appState.inventory.find(i => i.id === m.invId);
                         if (inv) {
                             const before=Number(inv.stock);
-                            inv.stock=before-Number(m.qty||0);
-                            recordInventoryMovement(inv,'Order Restored / Material Used',-Number(m.qty||0),before,inv.stock,{orderId:item.data.id,orderNo:formatOrderNo(item.data),customer:item.data.customer});
+                            const appliedQty = materialQtyForCurrentStock(m, inv);
+                            inv.stock=before-appliedQty;
+                            recordInventoryMovement(inv,'Order Restored / Material Used',-appliedQty,before,inv.stock,{orderId:item.data.id,orderNo:formatOrderNo(item.data),customer:item.data.customer});
                         }
                     });
                 }
