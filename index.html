@@ -1528,6 +1528,11 @@
 }
 #inventory-list-wrap .inventory-entry-main { flex:1 1 200px; min-width:0; }
 #inventory-list-wrap .inventory-stockline { overflow-wrap:anywhere; }
+/* Two slim lines replace long repeated labels; no dropdown or extra card height. */
+#inventory-list-wrap .inventory-stock-quantity,
+#inventory-list-wrap .inventory-stock-pricing { display:block; min-width:0; }
+#inventory-list-wrap .inventory-stock-pricing { margin-top:1px; }
+#inventory-list-wrap .inventory-stock-dot { color:#94a3b8; padding-inline:2px; }
 #inventory-list-wrap .inventory-stock-separator { color:#94a3b8; margin:0 2px; }
 #inventory-list-wrap .inventory-meta { gap:5px !important; flex-wrap:wrap; }
 #inventory-list-wrap .inventory-meta > span { font-size:9px !important; line-height:1.1; }
@@ -1571,7 +1576,7 @@
   body.mobile-mode #inventory-list-wrap .inventory-entry-main { flex:1 1 0; min-width:0; }
   body.mobile-mode #inventory-list-wrap .inventory-meta { gap:3px !important; }
   body.mobile-mode #inventory-list-wrap .inventory-meta > span { font-size:8px !important; padding:2px 4px; }
-  body.mobile-mode #inventory-list-wrap .inventory-meta > span:first-child { padding-left:0; }
+  body.mobile-mode #inventory-list-wrap .inventory-meta > .inventory-category-label { padding-left:0; }
   body.mobile-mode #inventory-list-wrap .inventory-entry h4 { font-size:10px !important; margin-top:1px !important; }
   body.mobile-mode #inventory-list-wrap .inventory-stockline { font-size:9px !important; line-height:1.25; }
   body.mobile-mode #inventory-list-wrap .inventory-entry-actions { gap:2px !important; flex-wrap:wrap; justify-content:flex-end; width:76px; flex:0 0 76px; }
@@ -6262,6 +6267,15 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             const n = Number(value) || 0;
             return '₱' + groupThousands(n.toFixed(2));
         }
+        function materialCostPerUnitLabel(unit) {
+            // Labels only: never change the quantity or unit cost used for COGS.
+            const label = String(unit || 'unit').trim().toLowerCase();
+            if (/^(?:pcs|pc)$/.test(label)) return 'pc';
+            if (/[^aeiou]ies$/.test(label)) return label.slice(0, -3) + 'y';
+            if (/(?:ch|sh|x|z)es$/.test(label)) return label.slice(0, -2);
+            if (/s$/.test(label) && !/ss$/.test(label)) return label.slice(0, -1);
+            return label;
+        }
         function materialEditableUsageCostInput(value) {
             const n = Number(value) || 0;
             // Editing another field must not silently round a stored fractional-cent
@@ -6354,12 +6368,13 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     <div data-card-kind="inventory" data-card-id="${item.id}" class="inventory-entry bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
                         <div class="inventory-entry-main min-w-0">
                             <div class="inventory-meta flex items-center gap-2">
-                                <span class="text-[10px] font-bold uppercase text-slate-400">${item.category || 'Uncategorized'}</span>
                                 ${badge}
+                                <span class="inventory-category-label text-[10px] font-bold uppercase text-slate-400">${item.category || 'Uncategorized'}</span>
                             </div>
                             <h4 class="font-bold text-slate-900 text-sm mt-0.5 truncate">${item.name}</h4>
                             <p class="inventory-stockline text-[11px] text-slate-500">
-                                Stock: <strong class="text-slate-900">${safeDisplay(materialPackStockText(item))}</strong>${materialPackSize(item) ? `<span class="inventory-stock-separator" aria-hidden="true"> | </span><span>${materialAmountLabel(item.stock)} ${safeDisplay(String(item.unit || 'sheets').replace(/^./, ch => ch.toUpperCase()))} total</span>` : ''}<span class="inventory-stock-separator" aria-hidden="true"> | </span><span>Unit Cost: <strong class="text-slate-900">${materialUsageCostText(item.cost)}</strong></span>${materialPackSize(item) ? `<span class="inventory-stock-separator" aria-hidden="true"> | </span><span>${safeDisplay(materialPurchaseUnit(item))} Price: <strong class="text-slate-900">₱${groupThousands(materialCostInput(materialPurchaseCost(item)))}</strong></span>` : ''}
+                                <span class="inventory-stock-quantity">Stock: <strong class="text-slate-900">${safeDisplay(materialPackStockText(item))}</strong>${materialPackSize(item) ? ` <span class="inventory-stock-dot" aria-hidden="true">·</span> ${materialAmountLabel(item.stock)} ${safeDisplay(String(item.unit || 'sheets').toLowerCase())} total` : ''}</span>
+                                <span class="inventory-stock-pricing">${materialUsageCostText(item.cost)}/${safeDisplay(materialCostPerUnitLabel(item.unit))}${materialPackSize(item) ? ` <span class="inventory-stock-dot" aria-hidden="true">·</span> ${materialUsageCostText(materialPurchaseCost(item))}/${safeDisplay(materialPurchaseUnit(item).toLowerCase())}` : ''}</span>
                             </p>
                         </div>
                         <div class="inventory-entry-actions flex items-center gap-1.5 shrink-0">
