@@ -950,6 +950,26 @@
 </style>
 
 <style id="inkahead-final-layout-refinements">
+/* Inventory quick actions share the category-filter row instead of wasting a second row. */
+#view-inventory .inventory-category-action-row {
+    display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0;
+}
+#view-inventory .inventory-category-action-row #inventory-category-bar {
+    flex:1 1 auto; min-width:0; width:auto !important; padding-bottom:0;
+}
+#view-inventory .inventory-category-actions {
+    display:flex; align-items:center; flex:0 0 auto; gap:5px; width:auto !important;
+}
+#view-inventory .inventory-category-actions button {
+    display:inline-flex; align-items:center; white-space:nowrap; line-height:1.2;
+}
+@media (max-width:767px) {
+    body.mobile-mode #view-inventory .inventory-category-action-row { display:flex !important; gap:5px !important; }
+    body.mobile-mode #view-inventory .inventory-category-action-row > #inventory-category-bar { width:auto !important; min-width:0; flex:1 1 auto; }
+    body.mobile-mode #view-inventory .inventory-category-action-row > .inventory-category-actions { width:auto !important; flex:0 0 auto; gap:3px; }
+    body.mobile-mode #view-inventory .inventory-category-actions button { font-size:9px !important; padding:5px 5px !important; border-radius:7px; }
+    body.mobile-mode #view-inventory .inventory-category-actions button i { margin-right:3px !important; }
+}
 /* Desktop: close the dead space between the page header and the first content row. */
 @media (min-width: 768px) {
   body.desktop-mode #main-scroll {
@@ -1533,6 +1553,7 @@
 #inventory-list-wrap .inventory-stock-pricing { display:block; min-width:0; }
 #inventory-list-wrap .inventory-stock-pricing { margin-top:1px; }
 #inventory-list-wrap .inventory-stock-dot { color:#94a3b8; padding-inline:2px; }
+#inventory-list-wrap .inventory-total-units { font-weight:700; }
 #inventory-list-wrap .inventory-stock-separator { color:#94a3b8; margin:0 2px; }
 #inventory-list-wrap .inventory-meta { gap:5px !important; flex-wrap:wrap; }
 #inventory-list-wrap .inventory-meta > span { font-size:9px !important; line-height:1.1; }
@@ -2933,8 +2954,12 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                             <i class="fa-solid fa-plus"></i> Add Material
                         </button>
                     </div>
-                    <div class="category-action-row">
+                    <div class="category-action-row inventory-category-action-row">
                         <div id="inventory-category-bar" class="flex items-center gap-1.5 overflow-x-auto pb-1"></div>
+                        <div class="inventory-category-actions">
+                            <button type="button" onclick="openInventoryPurchasesModal()" class="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 text-[10px] font-bold"><i class="fa-solid fa-truck-fast mr-1"></i>Purchases</button>
+                            <button type="button" onclick="openInventoryRestockPlanModal()" class="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-100 text-amber-700 text-[10px] font-bold"><i class="fa-solid fa-clipboard-list mr-1"></i>Restock Plan</button>
+                        </div>
                         <button type="button" onclick="openInventoryModal()" class="desktop-category-add px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg text-[11px] items-center gap-1.5 shadow-sm shrink-0"><i class="fa-solid fa-plus"></i> Add Material</button>
                     </div>
                     <div class="relative">
@@ -3786,7 +3811,12 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 before:before===null?null:Number(before), after:Number(after),
                 unit:item.unit||'Pcs',
                 orderId:extra.orderId||'', orderNo:extra.orderNo||'', customer:extra.customer||'',
-                note:extra.note||'', oldCost:extra.oldCost??null, newCost:extra.newCost??null
+                note:extra.note||'', oldCost:extra.oldCost??null, newCost:extra.newCost??null,
+                supplier:extra.supplier||'', receiptRef:extra.receiptRef||'',
+                purchaseDate:extra.purchaseDate||'', purchaseQty:extra.purchaseQty??null,
+                purchaseUnit:extra.purchaseUnit||'', purchaseUnitCost:extra.purchaseUnitCost??null,
+                totalPaid:extra.totalPaid??null, wasteReason:extra.wasteReason||'',
+                wasteValue:extra.wasteValue??null
             });
             // Limit stored history so localStorage and Firestore sync remain usable.
             if(appState.inventoryMovements.length>1000) appState.inventoryMovements.length=1000;
@@ -3811,6 +3841,9 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     <div class="flex flex-wrap justify-between items-center gap-1 mt-1 text-[9px] text-slate-500"><span>${safeDisplay(new Date(m.timestamp).toLocaleString())}</span><span class="font-semibold">${beforeAfter}</span></div>
                     ${(m.orderNo||m.customer)?`<div class="mt-1 text-[10px] text-slate-600">${orderButton}${m.customer?' • '+safeDisplay(m.customer):''}</div>`:''}
                     ${m.note?`<div class="mt-1 text-[9px] text-slate-500 break-words">${safeDisplay(m.note)}</div>`:''}
+                    ${m.supplier?`<div class="mt-1 text-[9px] text-blue-700">Supplier: ${safeDisplay(m.supplier)}${m.receiptRef?' · Receipt: '+safeDisplay(m.receiptRef):''}</div>`:''}
+                    ${m.totalPaid!=null?`<div class="mt-1 text-[9px] text-slate-600">Purchase total: ${materialUsageCostText(m.totalPaid)}${m.purchaseDate?' · '+safeDisplay(m.purchaseDate):''}</div>`:''}
+                    ${m.wasteReason?`<div class="mt-1 text-[9px] text-rose-700">${safeDisplay(m.wasteReason)} · Loss ${materialUsageCostText(m.wasteValue)}</div>`:''}
                     ${(m.oldCost!==null && m.newCost!==null)?`<div class="mt-1 text-[9px] text-slate-500">Cost: ₱${groupThousands(Number(m.oldCost).toFixed(2))} → ₱${groupThousands(Number(m.newCost).toFixed(2))}</div>`:''}
                 </div>`;
             }).join('');
@@ -3820,7 +3853,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             }).join('');
             document.getElementById('modal-content').innerHTML=`
                 <div class="flex items-start justify-between gap-2 border-b pb-2 mb-2"><div class="min-w-0"><span class="text-[9px] font-extrabold uppercase text-brand-600">Inventory / Movement Details</span><h3 class="text-sm font-extrabold text-slate-900 break-words">${safeDisplay(item.name)}</h3><p class="text-[10px] text-slate-500">${safeDisplay(item.category||'Uncategorized')}</p></div><button type="button" onclick="closeModal()" aria-label="Close movement details" class="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 shrink-0"><i class="fa-solid fa-xmark"></i></button></div>
-                <div class="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2 mb-2"><div><span class="text-[9px] font-bold text-slate-500">CURRENT STOCK</span><div class="text-sm font-extrabold ${currentStock<=threshold?'text-amber-700':'text-slate-900'}">${safeDisplay(materialPackStockText(item))} <span class="font-medium text-[10px] text-slate-500">${materialPackSize(item) ? `(${materialAmountLabel(currentStock)} ${safeDisplay(item.unit)} total) · ` : ''}Min: ${threshold} ${safeDisplay(item.unit)}</span></div><p class="text-[9px] text-slate-500">Unit: ${materialUsageCostText(item.cost)}${materialPackSize(item) ? ` · ${safeDisplay(materialPurchaseUnit(item))}: ₱${groupThousands(materialCostInput(materialPurchaseCost(item)))}` : ''}</p></div><button type="button" onclick="openRestockModal('${item.id}')" class="px-2 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-extrabold">+ Restock</button></div>
+                <div class="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2 mb-2"><div><span class="text-[9px] font-bold text-slate-500">CURRENT STOCK</span><div class="text-sm font-extrabold ${currentStock<=threshold?'text-amber-700':'text-slate-900'}">${safeDisplay(materialPackStockText(item))} <span class="font-medium text-[10px] text-slate-500">${materialPackSize(item) ? `(${materialAmountLabel(currentStock)} ${safeDisplay(item.unit)} total) · ` : ''}Min: ${threshold} ${safeDisplay(item.unit)}</span></div><p class="text-[9px] text-slate-500">Unit: ${materialUsageCostText(item.cost)}${materialPackSize(item) ? ` · ${safeDisplay(materialPurchaseUnit(item))}: ₱${groupThousands(materialCostInput(materialPurchaseCost(item)))}` : ''}</p></div><div class="flex shrink-0 gap-1"><button type="button" onclick="openInventoryWasteModal('${item.id}')" class="px-2 py-1.5 bg-rose-50 text-rose-700 rounded-lg text-[10px] font-extrabold">− Waste</button><button type="button" onclick="openRestockModal('${item.id}')" class="px-2 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-extrabold">+ Restock</button></div></div>
                 <div class="flex items-center justify-between gap-2 mb-1"><h4 class="text-[10px] font-extrabold uppercase text-slate-700">Stock movement timeline (${movements.length})</h4></div>
                 <div class="inventory-movement-timeline">${rows||'<p class="p-3 text-[10px] text-slate-500 text-center">No recorded movements yet.</p>'}</div>
                 <p class="mt-1 text-[9px] text-slate-400">History starts when movement tracking was enabled. Earlier stock changes are not reconstructed. Only the most recent 1,000 movements are retained.</p>
@@ -4386,7 +4419,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             const addOrder=(x,type)=>tasks.push({type, title:`${formatOrderNo(x.order)} · ${x.order.customer||'Customer'}`,description:`${type==='overdue'?Math.abs(x.days)+' day(s) overdue':'Due today'} · ${x.order.product||'Order'}`,kind:'order',id:x.order.id});
             overdue.forEach(x=>addOrder(x,'overdue'));
             dueToday.forEach(x=>addOrder(x,'today'));
-            lowStock.slice().sort((a,b)=>(Number(a.stock||0)-Number(a.minStock||0))-(Number(b.stock||0)-Number(b.minStock||0))).forEach(m=>tasks.push({type:'stock',title:m.name||'Material',description:`Stock ${Number(m.stock||0).toLocaleString()} / min ${Number(m.minStock??5).toLocaleString()} ${m.unit||''}`,kind:'material',id:m.id}));
+            lowStock.slice().sort((a,b)=>(Number(a.stock||0)-Number(a.minStock||0))-(Number(b.stock||0)-Number(b.minStock||0))).forEach(m=>tasks.push({type:'stock',title:m.name||'Material',description:`Stock ${Number(m.stock||0).toLocaleString()} / min ${Number(m.minStock??5).toLocaleString()} ${m.unit||''}${inventoryRestockSuggestion(m).purchaseQty ? ` · Buy ${inventoryRestockSuggestion(m).purchaseQty} ${materialPackSize(m)?materialPurchaseUnitLabel(m,inventoryRestockSuggestion(m).purchaseQty).toLowerCase():m.unit||'units'}` : ''}`,kind:'material',id:m.id}));
             balanceOrders.sort((a,b)=>(Number(b.total||0)-Number(b.deposit||0))-(Number(a.total||0)-Number(a.deposit||0))).forEach(o=>tasks.push({type:'balance',title:`${formatOrderNo(o)} · ${o.customer||'Customer'}`,description:`Balance ₱${groupThousands(Math.max(0,Number(o.total||0)-Number(o.deposit||0)).toFixed(2))}`,kind:'order',id:o.id}));
             standaloneBalances.forEach(inv=>tasks.push({type:'balance',title:inv.customer||'Unpaid invoice',description:`Invoice balance ₱${groupThousands(Math.max(0,Number(inv.amount||0)-Number(inv.downpayment??0)).toFixed(2))}`,kind:'invoice',id:''}));
             const countEl=document.getElementById('focus-urgent-count');
@@ -4666,7 +4699,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                                     <span class="text-[10px] font-semibold text-rose-700">${item.category}</span>
                                 </div>
                                 <h4 class="font-bold text-slate-900 mt-1 truncate">${item.name}</h4>
-                                <p class="text-[11px] font-bold text-rose-600">Current: ${item.stock} ${item.unit} (Min: ${item.minStock ?? 5})</p>
+                                <p class="text-[11px] font-bold text-rose-600">Current: ${materialAmountLabel(item.stock)} ${safeDisplay(item.unit)} (Min: ${materialAmountLabel(item.minStock ?? 5)}) · Buy ${inventoryRestockSuggestion(item).purchaseQty} ${safeDisplay(materialPackSize(item)?materialPurchaseUnitLabel(item,inventoryRestockSuggestion(item).purchaseQty).toLowerCase():item.unit||'units')}</p>
                             </div>
                             <button onclick="openRestockModal('${item.id}')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-[11px] shrink-0 shadow-sm">
                                 + Restock
@@ -4682,7 +4715,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                                     <span class="text-[10px] font-semibold text-amber-700">${item.category}</span>
                                 </div>
                                 <h4 class="font-bold text-slate-900 mt-1 truncate">${item.name}</h4>
-                                <p class="text-[11px] font-bold text-amber-700">Remaining: ${item.stock} ${item.unit} (Min: ${item.minStock ?? 5})</p>
+                                <p class="text-[11px] font-bold text-amber-700">Remaining: ${materialAmountLabel(item.stock)} ${safeDisplay(item.unit)} (Min: ${materialAmountLabel(item.minStock ?? 5)}) · Buy ${inventoryRestockSuggestion(item).purchaseQty} ${safeDisplay(materialPackSize(item)?materialPurchaseUnitLabel(item,inventoryRestockSuggestion(item).purchaseQty).toLowerCase():item.unit||'units')}</p>
                             </div>
                             <button onclick="openRestockModal('${item.id}')" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-[11px] shrink-0 shadow-sm">
                                 + Restock
@@ -5466,7 +5499,9 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             const prevReservedMap = {};
             if (existingOrd && Array.isArray(existingOrd.materialsUsed)) {
                 existingOrd.materialsUsed.forEach(pm => {
-                    prevReservedMap[pm.invId] = Number(pm.qty || 0);
+                    const previousInv=appState.inventory.find(i=>String(i.id)===String(pm.invId));
+                    const qty=previousInv ? materialQtyForCurrentStock(pm, previousInv) : Number(pm.qty||0);
+                    prevReservedMap[pm.invId]=(prevReservedMap[pm.invId]||0)+qty;
                 });
             }
 
@@ -5478,13 +5513,16 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 const shortage = Math.max(0, needed - availableStock);
                 const remainingStock = availableStock - needed;
                 const minStock = inv ? Number(inv.minStock ?? 5) : 5;
+                // For a shortage, show enough FULL purchase units to cover the order.
+                // For a low-stock warning, suggest enough to reach the material target.
+                const shortagePurchaseQty=inventoryPurchaseQuantityForShortage(inv,shortage);
+                const lowStockPlan=inv ? inventoryRestockSuggestion(inv, remainingStock) : null;
                 return {
-                    ...m,
-                    availableStock,
-                    needed,
-                    shortage,
-                    remainingStock,
-                    minStock
+                    ...m,availableStock,needed,shortage,remainingStock,minStock,
+                    shortagePurchaseQty,lowStockPlan,
+                    shortagePurchaseLabel:inv && materialPackSize(inv)
+                        ? materialPurchaseUnitLabel(inv,shortagePurchaseQty).toLowerCase()
+                        : String(inv?.unit || m.unit || 'units').toLowerCase()
                 };
             });
 
@@ -5501,9 +5539,9 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     <div class="stock-sync-chips mt-1 flex flex-wrap gap-1">
                         ${shortages.map(s => `
                             <span class="inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-md border border-rose-200 bg-white/90 px-2 py-1 text-[9px] font-semibold text-rose-800">
-                                <strong class="text-slate-800">${s.name}</strong>
-                                <span>Need ${s.needed} · In stock ${s.availableStock}</span>
-                                <strong class="rounded bg-rose-600 px-1.5 py-0.5 text-white">Restock +${s.shortage} ${s.unit}</strong>
+                                <strong class="text-slate-800">${safeDisplay(s.name)}</strong>
+                                <span>Need ${materialAmountLabel(s.needed)} · Available ${materialAmountLabel(s.availableStock)} · Short ${materialAmountLabel(s.shortage)} ${safeDisplay(s.unit)}</span>
+                                <strong class="rounded bg-rose-600 px-1.5 py-0.5 text-white">Buy ${materialAmountLabel(s.shortagePurchaseQty)} ${safeDisplay(s.shortagePurchaseLabel)}</strong>
                             </span>
                         `).join('')}
                     </div>
@@ -5533,7 +5571,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     <div class="stock-sync-chips mt-1 flex flex-wrap gap-1">
                         ${lowStockItems.map(s => `
                             <span class="inline-flex max-w-full items-center rounded-md border border-amber-200 bg-white/90 px-2 py-1 text-[9px] font-semibold text-amber-900">
-                                ${s.name}: ${s.remainingStock} ${s.unit} left (min. ${s.minStock})
+                                ${safeDisplay(s.name)}: ${materialAmountLabel(s.remainingStock)} ${safeDisplay(s.unit)} left (min. ${materialAmountLabel(s.minStock)})${s.lowStockPlan?.purchaseQty ? ` · Buy <strong>${materialAmountLabel(s.lowStockPlan.purchaseQty)} ${safeDisplay(materialPackSize(appState.inventory.find(i=>String(i.id)===String(s.invId))) ? materialPurchaseUnitLabel(appState.inventory.find(i=>String(i.id)===String(s.invId)),s.lowStockPlan.purchaseQty).toLowerCase() : String(s.unit).toLowerCase())}</strong>` : ''}
                             </span>
                         `).join('')}
                     </div>
@@ -6311,6 +6349,252 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             return `${parts.fullPacks} ${label}${parts.loose ? ` + ${materialAmountLabel(parts.loose)} ${String(item.unit || 'sheets').toLowerCase()}` : ''}`;
         }
 
+        // SMART RESTOCK: Always calculate in individual usage units. For packs/boxes
+        // round up to whole purchase units so suggested purchases are physically possible.
+        function inventoryRestockSuggestion(item, stockOverride = undefined) {
+            // Negative inventory represents a real outstanding deficit, not zero.
+            // Discarding its sign previously caused a -255-sheet balance to suggest
+            // one box, which would leave the account deeply negative after restocking.
+            const actualStock = stockOverride === undefined ? Number(item?.stock ?? 0) : Number(stockOverride);
+            const stock = Number.isFinite(actualStock) ? actualStock : 0;
+            const minimum = Math.max(0, Number(item?.minStock ?? 5));
+            const size = materialPackSize(item) || 1;
+            const savedTarget = item?.targetStock === null || item?.targetStock === '' || item?.targetStock === undefined
+                ? NaN : Number(item.targetStock);
+            const target = Number.isFinite(savedTarget)
+                ? Math.max(minimum, savedTarget)
+                : Math.max(minimum * 2, minimum, size);
+            const needed = Math.max(0, target - stock);
+            const purchaseQty = stock <= minimum && needed > 0 ? Math.ceil((needed - 1e-9) / size) : 0;
+            return {stock,minimum,target,size,shortage:Math.max(0,-stock),needed,purchaseQty,
+                addUnits:purchaseQty*size,projected:stock+purchaseQty*size,
+                estimatedCost:purchaseQty*Number(item?.cost||0)*size};
+        }
+        function inventoryPurchaseQuantityForShortage(item, shortage) {
+            const units = Math.max(0, Number(shortage)||0);
+            const size = materialPackSize(item) || 1;
+            return units > 0 ? Math.ceil((units - 1e-9)/size) : 0;
+        }
+        function todayLocalStockDate() {
+            const d=new Date();
+            return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+        }
+        function inventoryPurchaseEvents() {
+            return (appState.inventoryMovements || []).filter(m => m.type === 'Restock').slice()
+                .sort((a,b)=>String(b.purchaseDate||String(b.timestamp||'').slice(0,10)).localeCompare(String(a.purchaseDate||String(a.timestamp||'').slice(0,10))));
+        }
+        function inventoryKnownSuppliers() {
+            return Array.from(new Set([
+                ...(appState.inventory || []).map(i=>String(i.defaultSupplier||'').trim()),
+                ...inventoryPurchaseEvents().map(m=>String(m.supplier||'').trim())
+            ].filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+        }
+        let purchaseHistoryVisible = 50;
+        function openInventoryPurchasesModal() {
+            purchaseHistoryVisible = 50;
+            document.getElementById('modal-content').innerHTML = `
+                <div class="flex items-center justify-between border-b pb-2 mb-2"><div><h3 class="text-base font-extrabold text-slate-900">Supplier & Purchase History</h3><p class="text-[10px] text-slate-500">Recorded when you restock a material. Existing earlier restocks remain listed.</p></div><button type="button" onclick="closeModal()" aria-label="Close" class="p-2 text-slate-500"><i class="fa-solid fa-xmark"></i></button></div>
+                <input id="purchase-history-search" type="search" oninput="purchaseHistoryVisible=50;renderInventoryPurchaseHistory()" placeholder="Search material, supplier, receipt..." class="w-full border rounded-lg px-3 py-2 text-xs mb-2 outline-none">
+                <div id="purchase-history-summary" class="text-[10px] text-slate-500 mb-2"></div>
+                <div id="purchase-history-rows" class="max-h-[52vh] overflow-y-auto space-y-1.5"></div>
+                <p class="text-[9px] text-slate-400 mt-2">Purchase records share INKAHEAD’s inventory movement history, which retains the latest 1,000 movements. Receipt references are text, not uploaded receipt files. Purchases are not automatically added as expenses (avoids double counting COGS).</p>`;
+            document.getElementById('modal-backdrop').classList.remove('hidden');
+            renderInventoryPurchaseHistory();
+        }
+        function renderInventoryPurchaseHistory() {
+            const wrap=document.getElementById('purchase-history-rows');
+            if(!wrap)return;
+            const q=String(document.getElementById('purchase-history-search')?.value||'').trim().toLowerCase();
+            const events=inventoryPurchaseEvents().filter(m =>
+                [m.materialName,m.supplier,m.receiptRef,m.note,m.purchaseDate].some(v=>String(v||'').toLowerCase().includes(q)));
+            document.getElementById('purchase-history-summary').textContent = `${events.length} purchase${events.length===1?'':'s'} in retained history · ${new Set(events.map(m=>m.supplier).filter(Boolean)).size} suppliers`;
+            wrap.innerHTML=events.slice(0,purchaseHistoryVisible).map(m=>{
+                const unitName=m.purchaseUnit || 'unit';
+                const qty=m.purchaseQty != null ? `${materialAmountLabel(m.purchaseQty)} ${safeDisplay(unitName)}` : `+${materialAmountLabel(m.delta)} ${safeDisplay(m.unit||'units')}`;
+                const amount=m.totalPaid != null ? materialUsageCostText(m.totalPaid) : 'Not recorded';
+                return `<div class="border border-slate-200 rounded-lg px-2.5 py-2 bg-white text-[10px]">
+                    <div class="flex justify-between gap-2"><span class="font-bold text-slate-800 break-words">${safeDisplay(m.materialName)}</span><strong class="text-emerald-700 shrink-0">${qty}</strong></div>
+                    <div class="text-slate-500 mt-0.5">${safeDisplay(m.supplier||'Supplier not recorded')} · ${safeDisplay(m.purchaseDate || String(m.timestamp||'').slice(0,10))} · Total paid: <strong>${amount}</strong></div>
+                    ${m.purchaseUnitCost != null ? `<div class="text-slate-600 mt-0.5">Purchase price: ${materialUsageCostText(m.purchaseUnitCost)} / ${safeDisplay(unitName)}</div>` : ''}
+                    ${m.receiptRef ? `<div class="text-slate-600 mt-0.5">Receipt/reference: ${safeDisplay(m.receiptRef)}</div>` : ''}
+                    ${m.note ? `<div class="text-slate-500 mt-0.5 break-words">${safeDisplay(m.note)}</div>` : ''}
+                </div>`;
+            }).join('') || '<p class="p-4 text-center text-slate-400 text-xs">No purchases match your search.</p>';
+            if(events.length>purchaseHistoryVisible)wrap.insertAdjacentHTML('beforeend',`<button type="button" onclick="purchaseHistoryVisible+=50;renderInventoryPurchaseHistory()" class="w-full bg-blue-50 p-2 text-brand-700 font-bold rounded-lg">Show more (${Math.min(purchaseHistoryVisible,events.length)} / ${events.length})</button>`);
+        }
+        function openInventoryRestockPlanModal() {
+            const suggestions=(appState.inventory||[]).map(item=>({item,plan:inventoryRestockSuggestion(item)}))
+                .filter(x=>x.plan.purchaseQty>0).sort((a,b)=>(a.item.stock/a.plan.minimum||0)-(b.item.stock/b.plan.minimum||0));
+            const total=suggestions.reduce((sum,x)=>sum+x.plan.estimatedCost,0);
+            const rows=suggestions.map(({item,plan})=>{
+                const unit=materialPackSize(item) ? materialPurchaseUnitLabel(item,plan.purchaseQty) : item.unit;
+                return `<div class="flex items-center justify-between gap-2 border border-slate-200 rounded-lg px-2 py-2">
+                    <div class="min-w-0"><div class="font-bold text-slate-800 text-xs break-words">${safeDisplay(item.name)}</div>
+                        <div class="text-[10px] text-slate-500">Now ${materialAmountLabel(plan.stock)} ${safeDisplay(item.unit)}${plan.shortage>0 ? ` (short ${materialAmountLabel(plan.shortage)})` : ''} · Target ${materialAmountLabel(plan.target)} · Buy <strong class="text-amber-700">${materialAmountLabel(plan.purchaseQty)} ${safeDisplay(unit)}</strong></div>
+                        <div class="text-[10px] text-slate-500">After: ${materialAmountLabel(plan.projected)} ${safeDisplay(item.unit)} · Estimated ${materialUsageCostText(plan.estimatedCost)}</div>
+                    </div><button type="button" onclick='openRestockModal(${JSON.stringify(String(item.id))})' class="shrink-0 px-2 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold">Restock</button>
+                </div>`;
+            }).join('');
+            document.getElementById('modal-content').innerHTML = `
+                <div class="flex items-center justify-between border-b pb-2 mb-2"><div><h3 class="text-base font-extrabold text-slate-900">Smart Restock Plan</h3><p class="text-[10px] text-slate-500">Suggestions use each material’s low-stock threshold and desired target.</p></div><button type="button" onclick="closeModal()" class="p-2 text-slate-500" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+                <div class="text-[11px] font-bold mb-2">${suggestions.length} materials need restocking · Estimated ${materialUsageCostText(total)}</div>
+                <div class="max-h-[58vh] overflow-y-auto space-y-1.5">${rows||'<p class="p-4 text-xs text-center text-emerald-700">All materials are above their low-stock levels.</p>'}</div>
+                <p class="mt-2 text-[9px] text-slate-500">Purchase quantities are rounded up to complete packs/boxes. Prices are estimates based on current costs; no stock changes until a restock is confirmed.</p>`;
+            document.getElementById('modal-backdrop').classList.remove('hidden');
+        }
+        function materialWasteAllowsFractions(unit) {
+            // Sheets, pieces, cards, boxes and other countable materials always
+            // use whole numbers. Length/weight/volume materials may use decimals.
+            return /^(?:m|cm|mm|km|ft|feet|in|inches?|yd|yards?|meters?|metres?|centimeters?|centimetres?|millimeters?|millimetres?|kilometers?|kilometres?|grams?|g|kg|kilograms?|mg|lbs?|pounds?|oz|ounces?|ml|milliliters?|millilitres?|l|liters?|litres?|gallons?|gal|sqm|sqft|m2|ft2)$/i.test(String(unit || '').trim());
+        }
+        function materialWasteQuantityLimits(item) {
+            const fractional = materialWasteAllowsFractions(item?.unit);
+            return {minimum:fractional ? 0.01 : 1, step:fractional ? 0.01 : 1, inputMode:fractional ? 'decimal' : 'numeric'};
+        }
+        function openInventoryWasteModal(invId) {
+            const item=(appState.inventory||[]).find(i=>String(i.id)===String(invId));
+            if(!item)return;
+            const wasteQuantity = materialWasteQuantityLimits(item);
+            document.getElementById('modal-content').innerHTML=`
+                <div class="flex justify-between items-center border-b pb-2 mb-3"><h3 class="font-extrabold text-slate-900 text-base">Record Material Waste</h3><button type="button" onclick="closeModal()" class="p-2 text-slate-500" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+                <form onsubmit='handleInventoryWaste(event,${JSON.stringify(String(item.id))})' class="space-y-3 text-xs">
+                    <div class="rounded-lg bg-slate-50 p-2"><strong>${safeDisplay(item.name)}</strong><p class="text-[10px] text-slate-500">Available: ${safeDisplay(materialPackStockText(item))} · ${materialAmountLabel(item.stock)} ${safeDisplay(item.unit)} total</p></div>
+                    <div class="two-col-grid"><div><label class="block font-bold text-slate-600 mb-1">Quantity wasted (${safeDisplay(item.unit)})</label><input id="waste-qty" type="number" inputmode="${wasteQuantity.inputMode}" min="${wasteQuantity.minimum}" max="${Math.max(0, Number(item.stock||0))}" step="${wasteQuantity.step}" placeholder="${wasteQuantity.step===1?'e.g. 2':'e.g. 0.5'}" required class="w-full border rounded-lg p-2 font-bold" oninput="updateWastePreview(${JSON.stringify(Number(item.cost||0))})"></div>
+                    <div><label class="block font-bold text-slate-600 mb-1">Reason</label><select id="waste-reason" class="w-full border rounded-lg p-2"><option>Misprint</option><option>Damaged</option><option>Test print</option><option>Expired / spoiled</option><option>Other</option></select></div></div>
+                    <div><label class="block font-bold text-slate-600 mb-1">Notes (optional)</label><input id="waste-note" type="text" maxlength="300" placeholder="What happened?" class="w-full border rounded-lg p-2"></div>
+                    <p id="waste-cost-preview" class="text-[10px] text-rose-700 font-bold">Estimated loss: ₱0.00</p>
+                    <label class="flex gap-2 items-start text-[10px] text-slate-700 font-semibold"><input id="waste-create-expense" type="checkbox" checked class="mt-0.5">Also record estimated loss in Expenses (Material Waste)</label>
+                    <p class="text-[9px] text-slate-500">Enabled by default. This records the material cost lost, not another cash payment. Uncheck if you already account for the same loss elsewhere to avoid double counting.</p>
+                    <p class="text-[10px] text-slate-500">Deducts usage units from stock immediately and records a waste movement, separate from customer order consumption.</p>
+                    <div class="flex justify-end gap-2 border-t pt-2"><button type="button" onclick="closeModal()" class="px-3 py-2 bg-slate-100 rounded-lg font-bold">Cancel</button><button type="submit" class="px-3 py-2 bg-rose-600 text-white rounded-lg font-bold">Record Waste</button></div>
+                </form>`;
+            document.getElementById('modal-backdrop').classList.remove('hidden');
+        }
+        function updateWastePreview(unitCost) {
+            const qty=Math.max(0,Number(document.getElementById('waste-qty')?.value||0));
+            const textEl=document.getElementById('waste-cost-preview');
+            if(textEl)textEl.textContent='Estimated loss: '+materialUsageCostText(qty*Number(unitCost||0));
+        }
+        // Keep waste inputs separate from stock changes until the owner confirms.
+        // Unlike window.confirm(), this uses the same in-app caution dialog as
+        // customer/expense deletion and works within the iPhone Home Screen app.
+        let pendingInventoryWaste = null;
+        function handleInventoryWaste(e,invId) {
+            e.preventDefault();
+            const item=(appState.inventory||[]).find(i=>String(i.id)===String(invId));
+            if(!item)return;
+            const qty=Number(document.getElementById('waste-qty')?.value);
+            const before=Number(item.stock||0);
+            const wasteQuantity=materialWasteQuantityLimits(item);
+            if(!Number.isFinite(qty)||qty<wasteQuantity.minimum ||
+                (wasteQuantity.step===1 && !Number.isInteger(qty)) ||
+                (wasteQuantity.step!==1 && Math.abs(qty*100-Math.round(qty*100))>1e-7) ||
+                qty>before){
+                alert(wasteQuantity.step===1
+                    ? 'Enter a whole-number waste quantity (1 or more) within available stock.'
+                    : 'Enter a waste quantity of at least 0.01, in 0.01 increments, within available stock.');
+                return;
+            }
+            pendingInventoryWaste={
+                invId:String(item.id),qty,
+                reason:document.getElementById('waste-reason')?.value||'Other',
+                note:document.getElementById('waste-note')?.value.trim()||'',
+                createExpense:!!document.getElementById('waste-create-expense')?.checked,
+                stockBefore:before,unitCost:Number(item.cost||0)
+            };
+            showInventoryWasteConfirmation();
+        }
+        function showInventoryWasteConfirmation() {
+            const p=pendingInventoryWaste;
+            if(!p)return;
+            const item=(appState.inventory||[]).find(i=>String(i.id)===p.invId);
+            if(!item){pendingInventoryWaste=null;closeModal();return;}
+            const loss=Number((p.qty*p.unitCost).toFixed(2));
+            const after=Number((p.stockBefore-p.qty).toFixed(5));
+            document.getElementById('modal-content').innerHTML=`
+                <div class="flex items-center justify-between border-b pb-3 mb-3">
+                    <div class="flex items-center gap-2 text-rose-600">
+                        <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                        <h3 class="font-bold text-base">Confirm Material Waste?</h3>
+                    </div>
+                    <button type="button" onclick="cancelInventoryWasteConfirmation(false)" class="text-slate-400 hover:text-slate-600" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="space-y-3 text-xs">
+                    <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 space-y-1">
+                        <p class="font-bold">You are about to deduct material from inventory:</p>
+                        <p class="font-bold break-words">${safeDisplay(item.name)}</p>
+                        <p class="text-[11px] text-rose-700">Quantity: <strong>${materialAmountLabel(p.qty)} ${safeDisplay(item.unit)}</strong> · Reason: <strong>${safeDisplay(p.reason)}</strong></p>
+                        <p class="text-[11px] text-rose-700">Stock: <strong>${materialAmountLabel(p.stockBefore)} → ${materialAmountLabel(after)} ${safeDisplay(item.unit)}</strong></p>
+                        <p class="text-[11px] text-rose-700">Estimated loss: <strong>${materialUsageCostText(loss)}</strong></p>
+                        ${p.note?`<p class="text-[11px] text-rose-700 break-words">Notes: ${safeDisplay(p.note)}</p>`:''}
+                    </div>
+                    <p class="text-slate-600">Are you sure you want to record this material waste? The stock deduction and movement history will be saved when you confirm.</p>
+                    <div class="p-2.5 rounded-lg border ${p.createExpense?'border-amber-200 bg-amber-50 text-amber-800':'border-slate-200 bg-slate-50 text-slate-600'} text-[11px]">
+                        <i class="fa-solid ${p.createExpense?'fa-receipt':'fa-circle-info'} mr-1"></i>
+                        ${p.createExpense?'An estimated Material Waste expense will also be recorded.':'No expense entry will be created; only inventory and waste history will change.'}
+                    </div>
+                    <div class="flex justify-end gap-2 pt-2 border-t">
+                        <button type="button" onclick="cancelInventoryWasteConfirmation(true)" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold text-slate-700">Cancel</button>
+                        <button type="button" onclick="confirmInventoryWaste()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-sm">Yes, Record Waste</button>
+                    </div>
+                </div>`;
+            document.getElementById('modal-backdrop').classList.remove('hidden');
+        }
+        function cancelInventoryWasteConfirmation(returnToForm) {
+            const p=pendingInventoryWaste;
+            pendingInventoryWaste=null;
+            if(!returnToForm||!p){closeModal();return;}
+            openInventoryWasteModal(p.invId);
+            const qty=document.getElementById('waste-qty');
+            const reason=document.getElementById('waste-reason');
+            const note=document.getElementById('waste-note');
+            const expense=document.getElementById('waste-create-expense');
+            if(qty)qty.value=String(p.qty);
+            if(reason)reason.value=p.reason;
+            if(note)note.value=p.note;
+            if(expense)expense.checked=p.createExpense;
+            updateWastePreview(p.unitCost);
+        }
+        function confirmInventoryWaste() {
+            const p=pendingInventoryWaste;
+            if(!p)return;
+            const item=(appState.inventory||[]).find(i=>String(i.id)===p.invId);
+            if(!item){pendingInventoryWaste=null;closeModal();return;}
+            const before=Number(item.stock||0);
+            const wasteQuantity=materialWasteQuantityLimits(item);
+            if(!Number.isFinite(p.qty)||p.qty<wasteQuantity.minimum ||
+                (wasteQuantity.step===1 && !Number.isInteger(p.qty)) ||
+                (wasteQuantity.step!==1 && Math.abs(p.qty*100-Math.round(p.qty*100))>1e-7) ||
+                p.qty>before){
+                alert('Available stock has changed, or the waste quantity is no longer valid. Please review the material and try again.');
+                cancelInventoryWasteConfirmation(true);
+                return;
+            }
+            // A live Firebase update can change stock or price while the dialog
+            // is open; require review of the new numbers before applying waste.
+            const cost=Number(item.cost||0);
+            if(before!==p.stockBefore||cost!==p.unitCost){
+                p.stockBefore=before;
+                p.unitCost=cost;
+                showInventoryWasteConfirmation();
+                return;
+            }
+            // Clear the pending action first to guard against double clicks.
+            pendingInventoryWaste=null;
+            const loss=Number((p.qty*cost).toFixed(2));
+            item.stock=Number((before-p.qty).toFixed(5));
+            recordInventoryMovement(item,'Material Waste',-p.qty,before,item.stock,{wasteReason:p.reason,wasteValue:loss,note:p.note||p.reason});
+            if(p.createExpense)appState.expenses.unshift({
+                id:'exp-waste-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),
+                orderNo:'',date:todayLocalStockDate(),
+                description:`Material Waste — ${item.name} (${p.reason})`,
+                category:'Material Waste',amount:loss,
+                sourceType:'inventoryWaste',sourceInventoryId:item.id,wastedQuantity:p.qty
+            });
+            logActivity('Inventory',`Recorded Material Waste — ${item.name}`,`${materialAmountLabel(p.qty)} ${item.unit} (${p.reason}) · Estimated loss ${materialUsageCostText(loss)}${p.createExpense?' · Expense added':''}${p.note?' · '+p.note:''}`);
+            saveState(); closeModal();
+        }
+
         // ================= VIEW 5: INVENTORY & RAW MATERIALS =================
         function renderInventory() {
             const wrap = document.getElementById('inventory-list-wrap');
@@ -6373,7 +6657,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                             </div>
                             <h4 class="font-bold text-slate-900 text-sm mt-0.5 truncate">${item.name}</h4>
                             <p class="inventory-stockline text-[11px] text-slate-500">
-                                <span class="inventory-stock-quantity">Stock: <strong class="text-slate-900">${safeDisplay(materialPackStockText(item))}</strong>${materialPackSize(item) ? ` <span class="inventory-stock-dot" aria-hidden="true">·</span> ${materialAmountLabel(item.stock)} ${safeDisplay(String(item.unit || 'sheets').toLowerCase())} total` : ''}</span>
+                                <span class="inventory-stock-quantity">Stock: <strong class="text-slate-900">${safeDisplay(materialPackStockText(item))}</strong>${materialPackSize(item) ? ` <span class="inventory-stock-dot" aria-hidden="true">·</span> <strong class="inventory-total-units text-slate-900">${materialAmountLabel(item.stock)} ${safeDisplay(String(item.unit || 'sheets').toLowerCase())} total</strong>` : ''}${inventoryRestockSuggestion(item).purchaseQty ? `<span class="text-amber-700 font-bold"> · Buy ${inventoryRestockSuggestion(item).purchaseQty} ${safeDisplay(materialPackSize(item)?materialPurchaseUnitLabel(item,inventoryRestockSuggestion(item).purchaseQty).toLowerCase():item.unit)}</span>` : ''}</span>
                                 <span class="inventory-stock-pricing">${materialUsageCostText(item.cost)}/${safeDisplay(materialCostPerUnitLabel(item.unit))}${materialPackSize(item) ? ` <span class="inventory-stock-dot" aria-hidden="true">·</span> ${materialUsageCostText(materialPurchaseCost(item))}/${safeDisplay(materialPurchaseUnit(item).toLowerCase())}` : ''}</span>
                             </p>
                         </div>
@@ -6381,7 +6665,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                             <button onclick="openRestockModal('${item.id}')" class="inventory-restock-button px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-[11px]">
                                 + Restock
                             </button>
-                            <button type="button" onclick="openMaterialMovementModal('${item.id}')" class="inventory-movement-button rounded-lg px-2 py-1" title="Material Movement Details" aria-label="Material movement history"><i class="fa-solid fa-info text-[10px]"></i></button>
+                            <button type="button" onclick="openMaterialMovementModal('${item.id}')" class="inventory-movement-button rounded-lg px-2 py-1" title="Stock history and record waste" aria-label="Stock history and record waste"><i class="fa-solid fa-info text-[10px]"></i></button>
                             <button onclick="openInventoryModal('${item.id}')" class="p-1.5 bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-600 rounded-xl" title="Edit Material / Update Unit Price">
                                 <i class="fa-solid fa-pen"></i>
                             </button>
@@ -6430,6 +6714,11 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                             <label class="block font-bold uppercase text-slate-600 mb-1">Low Stock Alert Level</label>
                             <input type="number" id="inv-min" value="${existing ? Number(existing.minStock ?? 5) : 5}" required class="w-full px-3 py-2 border rounded-xl outline-none">
                         </div>
+                    </div>
+                    <div>
+                        <label class="block font-bold uppercase text-slate-600 mb-1">Desired Stock Target (usage units)</label>
+                        <input type="number" min="0" step="any" id="inv-target" value="${existing && existing.targetStock != null ? safeDisplay(existing.targetStock) : ''}" placeholder="Auto: minimum or one full purchase unit" class="w-full px-3 py-2 border rounded-xl outline-none">
+                        <span class="text-[10px] text-slate-400 block mt-1">When stock is low, INKAHEAD suggests enough full purchase units to reach this target. Leave blank for automatic target.</span>
                     </div>
                     <div id="inv-standard-cost-wrap">
                         <label class="block font-bold uppercase text-slate-600 mb-1">Cost Per Unit (₱)</label>
@@ -6576,6 +6865,11 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             }
             const stock = packEnabled ? Number((packCount*packSize + looseCount).toFixed(5)) : (Number(document.getElementById('inv-stock').value) || 0);
             const minStock = Number(document.getElementById('inv-min').value) || 0;
+            const targetRaw = document.getElementById('inv-target')?.value.trim() || '';
+            const targetStock = targetRaw === '' ? null : Number(targetRaw);
+            if (targetStock !== null && (!Number.isFinite(targetStock) || targetStock < 0 || targetStock < minStock)) {
+                alert('Desired stock target must be at least the low stock alert level, or leave it blank for automatic planning.'); return;
+            }
             const packCost = Number(document.getElementById('inv-pack-cost')?.value || 0);
             const cost = packEnabled ? (packCost/packSize) : (Number(document.getElementById('inv-cost').value) || 0);
             if (![stock,minStock,cost].every(Number.isFinite) || (packEnabled && (stock<0 || minStock<0 || cost<0))) {
@@ -6597,6 +6891,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     existing.unit = unit;
                     existing.stock = stock;
                     existing.minStock = minStock;
+                    existing.targetStock = targetStock;
                     existing.cost = cost;
                     if (packEnabled) {
                         existing.packSize = packSize;
@@ -6628,6 +6923,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     unit,
                     stock,
                     minStock,
+                    targetStock,
                     cost,
                     ...(packEnabled ? { packSize, purchaseUnit } : {})
                 };
@@ -6661,7 +6957,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     <div class="two-col-grid">
                         <div>
                             <label class="block font-bold uppercase text-slate-600 mb-1">${materialPackSize(item) ? `Full ${safeDisplay(materialPurchaseUnitPlural(item))} to Add` : `Quantity to Add (${safeDisplay(item.unit)})`}</label>
-                            <input type="number" id="restock-qty" min="1" step="1" value="${materialPackSize(item) ? 1 : 10}" oninput="calcRestockUnitCostFromTotal()" required class="w-full px-3 py-2 border rounded-xl outline-none font-bold">
+                            <input type="number" id="restock-qty" min="1" step="1" value="${inventoryRestockSuggestion(item).purchaseQty || (materialPackSize(item) ? 1 : 10)}" oninput="calcRestockUnitCostFromTotal()" required class="w-full px-3 py-2 border rounded-xl outline-none font-bold">
                         </div>
                         <div>
                             <label class="block font-bold uppercase text-brand-600 mb-1">${materialPackSize(item) ? `Price per ${safeDisplay(materialPurchaseUnit(item))} (₱)` : 'New Unit Cost / Price (₱)'}</label>
@@ -6676,6 +6972,14 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                             <input type="number" step="0.01" min="0" id="restock-pack-total" oninput="calcRestockUnitCostFromTotal()" placeholder="Enter Total Pack Price paid (₱)..." class="flex-1 px-3 py-1.5 border border-amber-200 bg-white rounded-xl outline-none">
                             <span class="text-[10px] text-amber-700 font-bold shrink-0">Auto-divides by ${materialPackSize(item)?safeDisplay(materialPurchaseUnitPlural(item)).toLowerCase():'qty'}</span>
                         </div>
+                    </div>
+                    <div class="rounded-lg bg-blue-50 border border-blue-100 px-2 py-1.5 text-[10px] text-blue-800 font-semibold">${inventoryRestockSuggestion(item).purchaseQty ? `Suggested: buy ${inventoryRestockSuggestion(item).purchaseQty} ${safeDisplay(materialPackSize(item)?materialPurchaseUnitLabel(item,inventoryRestockSuggestion(item).purchaseQty):item.unit)} to reach ${materialAmountLabel(inventoryRestockSuggestion(item).target)} ${safeDisplay(item.unit)}. ` : ''}Target ${materialAmountLabel(inventoryRestockSuggestion(item).target)} ${safeDisplay(item.unit)} · Set target in Edit Material.</div>
+                    <div class="rounded-xl bg-slate-50 border border-slate-200 p-2 space-y-2">
+                        <div class="two-col-grid"><div><label class="block font-bold text-slate-600 mb-1">Supplier</label><input id="restock-supplier" type="text" list="inventory-supplier-list" maxlength="120" value="${safeDisplay(item.defaultSupplier||'')}" placeholder="Supplier name" class="w-full border rounded-lg p-2"></div>
+                        <div><label class="block font-bold text-slate-600 mb-1">Purchase Date</label><input id="restock-date" type="date" required value="${todayLocalStockDate()}" class="w-full border rounded-lg p-2"></div></div>
+                        <datalist id="inventory-supplier-list">${inventoryKnownSuppliers().map(name=>`<option value="${safeDisplay(name)}"></option>`).join('')}</datalist>
+                        <div><label class="block font-bold text-slate-600 mb-1">Receipt / Invoice reference (optional)</label><input id="restock-receipt" type="text" maxlength="160" placeholder="e.g. INV-3482 or receipt filename" class="w-full border rounded-lg p-2"></div>
+                        <div><label class="block font-bold text-slate-600 mb-1">Purchase notes (optional)</label><input id="restock-note" type="text" maxlength="300" placeholder="e.g. New paper batch" class="w-full border rounded-lg p-2"></div>
                     </div>
                     <p class="text-[10px] text-slate-400">${materialPackSize(item) ? `Each ${safeDisplay(materialPurchaseUnit(item))} adds ${materialPackSize(item)} ${safeDisplay(item.unit)}. Orders consume individual ${safeDisplay(item.unit)} and cost is calculated per usage unit.` : 'Updating unit cost recalculates Product Library material estimates.'}</p>
                     <div class="flex justify-end gap-2 pt-2 border-t">
@@ -6707,15 +7011,31 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             const newCostInput = document.getElementById('restock-cost');
             const purchaseCost = newCostInput ? Number(newCostInput.value) : Number(item.cost || 0)*(size||1);
             if (!Number.isFinite(purchaseCost) || purchaseCost < 0) { alert('Enter a valid cost.'); return; }
-            const newCost = purchaseCost / (size || 1);
+            const totalInputRaw=document.getElementById('restock-pack-total')?.value.trim()||'';
+            const newCost = totalInputRaw!=='' ? Number(totalInputRaw)/(requestedQty*(size||1)) : purchaseCost / (size || 1);
+            const supplier=document.getElementById('restock-supplier')?.value.trim()||'';
+            const purchaseDate=document.getElementById('restock-date')?.value||'';
+            const receiptRef=document.getElementById('restock-receipt')?.value.trim()||'';
+            const purchaseNote=document.getElementById('restock-note')?.value.trim()||'';
+            if(!/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate)){alert('Enter a valid purchase date.');return;}
+            const suppliedTotalRaw=document.getElementById('restock-pack-total')?.value.trim()||'';
+            const totalPaid = suppliedTotalRaw!=='' ? Number(suppliedTotalRaw) : requestedQty*purchaseCost;
+            if(!Number.isFinite(totalPaid)||totalPaid<0){alert('Enter a valid purchase total.');return;}
             const oldCost = Number(item.cost || 0);
             const before = Number(item.stock);
             item.stock = before + addQty;
             item.cost = newCost;
+            if(supplier)item.defaultSupplier=supplier;
             syncProductCostsWithInventory();
 
             const priceChangeNote = newCost !== oldCost ? ` • Unit Price updated: ₱${groupThousands(oldCost.toFixed(2))} → ₱${groupThousands(newCost.toFixed(2))}` : '';
-            recordInventoryMovement(item,'Restock',addQty,before,item.stock,{note:size ? `Supplier restock: +${requestedQty} ${materialPurchaseUnitLabel(item, requestedQty)} × ${size} ${item.unit}` : 'Supplier restock', ...(newCost!==oldCost?{oldCost,newCost}:{})});
+            recordInventoryMovement(item,'Restock',addQty,before,item.stock,{
+                note:[size ? `Purchased ${requestedQty} ${materialPurchaseUnitLabel(item,requestedQty)} × ${size} ${item.unit}` : `Purchased ${requestedQty} ${item.unit}`,purchaseNote].filter(Boolean).join(' · '),
+                supplier,receiptRef,purchaseDate,purchaseQty:requestedQty,
+                purchaseUnit:size?materialPurchaseUnitLabel(item,requestedQty):item.unit,
+                purchaseUnitCost:totalPaid/requestedQty,totalPaid,
+                ...(newCost!==oldCost?{oldCost,newCost}:{})
+            });
             logActivity('Inventory', `Restocked ${item.name}`, `${size ? `Added ${requestedQty} full ${materialPurchaseUnitLabel(item, requestedQty).toLowerCase()} (+${addQty} ${item.unit})` : `Added +${addQty} ${item.unit}`} (${before} → ${item.stock} ${item.unit})${priceChangeNote}`);
             saveState();
             closeModal();
