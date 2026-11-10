@@ -1993,7 +1993,7 @@ html { background-color:#ffffff !important; }
 }
 /* Receipt notes share the customer information row, never overlap it. */
 .receipt-bill-info { display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; align-items:start; }
-.receipt-bill-info:not(:has(.receipt-order-notes)) { grid-template-columns:1fr; }
+.receipt-bill-info.no-receipt-notes { grid-template-columns:minmax(0,1fr) !important; }
 .receipt-bill-info > * { min-width:0; overflow-wrap:anywhere; }
 .receipt-order-notes { text-align:left !important; min-width:0; overflow-wrap:anywhere; }
 @media (max-width:767px) {
@@ -5233,6 +5233,70 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             return Object.values(map);
         }
 
+        // Keep the order's deposit amount and percentage linked without changing saved data schema.
+        let orderDepositEditedAs = 'amount';
+        function orderDepositTotalNumber() {
+            return Math.max(0, Number(document.getElementById('ord-total')?.value) || 0);
+        }
+        function syncOrderDepositFields(changed = 'total') {
+            const amountInput = document.getElementById('ord-deposit');
+            const percentInput = document.getElementById('ord-deposit-percent');
+            if (!amountInput || !percentInput) return;
+            const total = orderDepositTotalNumber();
+            if (changed === 'percent' || (changed === 'total' && orderDepositEditedAs === 'percent')) {
+                const entered = Number(percentInput.value) || 0;
+                const pct = Math.min(100, Math.max(0, entered));
+                if (percentInput.value !== '' && pct !== entered) percentInput.value = String(pct);
+                amountInput.value = (Math.round(total * pct) / 100).toFixed(2);
+                return;
+            }
+            const paid = Math.max(0, Number(amountInput.value) || 0);
+            percentInput.value = total > 0
+                ? String(Number(((paid / total) * 100).toFixed(2)))
+                : '0';
+        }
+        function onOrderDepositAmountInput() {
+            orderDepositEditedAs = 'amount';
+            syncOrderDepositFields('amount');
+        }
+        function onOrderDepositPercentInput() {
+            orderDepositEditedAs = 'percent';
+            syncOrderDepositFields('percent');
+        }
+        function onOrderDepositTotalInput() { syncOrderDepositFields('total'); }
+
+        // Saved-customer lookup and contact details remain collapsed until requested.
+        function fillOrderCustomerDetails(customer) {
+            const source = customer || {};
+            ['phone', 'email', 'address', 'notes'].forEach(key => {
+                const field = document.getElementById('ord-customer-' + key);
+                if (field) field.value = source[key] || '';
+            });
+            const ref = document.getElementById('ord-customer-id');
+            if (ref) ref.value = customer ? String(customer.id || '') : '';
+        }
+        function onOrderCustomerNameInput() {
+            const field = document.getElementById('ord-customer');
+            const name = field?.value.trim() || '';
+            const matched = findCustomerByName(name);
+            const ref = document.getElementById('ord-customer-id');
+            if (matched && ref?.value === String(matched.id)) return;
+            fillOrderCustomerDetails(matched);
+        }
+        function toggleOrderCustomerDetails() {
+            const area = document.getElementById('ord-customer-details');
+            const button = document.getElementById('ord-customer-details-toggle');
+            if (!area || !button) return;
+            const willOpen = area.classList.contains('hidden');
+            area.classList.toggle('hidden', !willOpen);
+            button.setAttribute('aria-expanded', String(willOpen));
+            const chevron = button.querySelector('.fa-chevron-down, .fa-chevron-up');
+            if (chevron) {
+                chevron.classList.toggle('fa-chevron-down', !willOpen);
+                chevron.classList.toggle('fa-chevron-up', willOpen);
+            }
+        }
+
         function openOrderModal(editId = null, reorderFromId = null) {
             editingOrderId = editId;
             const existing = editId ? appState.orders.find(o => o.id === editId) : null;
@@ -5242,6 +5306,11 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 : null;
             if (reorderFromId != null && !sourceOrder) return;
             const template = existing || sourceOrder;
+            const templateCustomer = template
+                ? ((template.customerId ? appState.customers.find(c => String(c.id) === String(template.customerId)) : null)
+                    || findCustomerByName(template.customer))
+                : null;
+            orderDepositEditedAs = 'amount';
 
             if (template && Array.isArray(template.items) && template.items.length > 0) {
                 orderModalItems = template.items.map(i => ({
@@ -5279,7 +5348,25 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     <input type="hidden" id="ord-reorder-source-id" value="${sourceOrder ? safeDisplay(sourceOrder.id) : ''}">
                     <div class="live-search-wrap relative">
                         <label class="block font-bold uppercase text-slate-600 mb-1">Customer Name</label>
-                        <input type="text" id="ord-customer" autocomplete="off" required value="${template ? safeDisplay(template.customer || '') : ''}" placeholder="Search or type customer name..." class="w-full px-3 py-2 border rounded-xl outline-none focus:border-brand-500">
+                        <input type="hidden" id="ord-customer-id" value="${templateCustomer ? safeDisplay(templateCustomer.id) : ''}">
+                        <input type="text" id="ord-customer" autocomplete="off" oninput="onOrderCustomerNameInput()" required value="${template ? safeDisplay(template.customer || '') : ''}" placeholder="Search or type customer name..." class="w-full px-3 py-2 border rounded-xl outline-none focus:border-brand-500">
+                    </div>
+                    <div class="-mt-1">
+                        <button type="button" id="ord-customer-details-toggle" onclick="toggleOrderCustomerDetails()" aria-expanded="false" aria-controls="ord-customer-details" class="text-[10px] font-bold text-brand-600 flex items-center gap-1.5 px-1 py-1" title="View or enter phone, email, address and customer preferences">
+                            <i class="fa-solid fa-address-card"></i> Customer Details <i class="fa-solid fa-chevron-down text-[9px]"></i>
+                        </button>
+                        <div id="ord-customer-details" class="hidden border border-slate-200 bg-slate-50/70 rounded-xl p-2.5 space-y-2 mt-1">
+                            <div class="two-col-grid">
+                                <div><label class="block font-bold uppercase text-slate-500 mb-1 text-[9px]">Phone</label>
+                                    <input type="tel" id="ord-customer-phone" value="${templateCustomer ? safeDisplay(templateCustomer.phone || '') : ''}" placeholder="Mobile or phone number" class="w-full px-2.5 py-1.5 border rounded-lg bg-white outline-none number-format-raw"></div>
+                                <div><label class="block font-bold uppercase text-slate-500 mb-1 text-[9px]">Email</label>
+                                    <input type="email" id="ord-customer-email" value="${templateCustomer ? safeDisplay(templateCustomer.email || '') : ''}" placeholder="Email address" class="w-full px-2.5 py-1.5 border rounded-lg bg-white outline-none"></div>
+                            </div>
+                            <div><label class="block font-bold uppercase text-slate-500 mb-1 text-[9px]">Delivery / Billing Address</label>
+                                <input type="text" id="ord-customer-address" value="${templateCustomer ? safeDisplay(templateCustomer.address || '') : ''}" placeholder="Street, barangay, city..." class="w-full px-2.5 py-1.5 border rounded-lg bg-white outline-none"></div>
+                            <div><label class="block font-bold uppercase text-slate-500 mb-1 text-[9px]">Customer Notes / Preferences</label>
+                                <input type="text" id="ord-customer-notes" value="${templateCustomer ? safeDisplay(templateCustomer.notes || '') : ''}" placeholder="Preferences or contact notes" class="w-full px-2.5 py-1.5 border rounded-lg bg-white outline-none"></div>
+                        </div>
                     </div>
 
                     <div class="two-col-grid">
@@ -5313,11 +5400,17 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                     <div class="two-col-grid pt-2 border-t border-slate-100">
                         <div>
                             <label class="block font-bold uppercase text-slate-600 mb-1">Total Amount (₱)</label>
-                            <input type="number" step="0.01" id="ord-total" required value="${template ? Number(template.total || 0).toFixed(2) : '0.00'}" class="w-full px-3 py-2 border rounded-xl outline-none font-extrabold bg-slate-50">
+                            <input type="number" step="0.01" min="0" id="ord-total" oninput="onOrderDepositTotalInput()" required value="${template ? Number(template.total || 0).toFixed(2) : '0.00'}" class="w-full px-3 py-2 border rounded-xl outline-none font-extrabold bg-slate-50">
                         </div>
                         <div>
                             <label class="block font-bold uppercase text-slate-600 mb-1">Downpayment / Deposit (₱)</label>
-                            <input type="number" step="0.01" id="ord-deposit" value="${existing ? Number(existing.deposit || 0).toFixed(2) : '0.00'}" class="w-full px-3 py-2 border rounded-xl outline-none font-bold text-emerald-700">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <input type="number" step="0.01" min="0" id="ord-deposit" oninput="onOrderDepositAmountInput()" value="${existing ? Number(existing.deposit || 0).toFixed(2) : '0.00'}" class="w-full min-w-0 flex-1 px-2.5 py-2 border rounded-xl outline-none font-bold text-emerald-700" aria-label="Deposit amount in pesos">
+                                <div class="relative w-[72px] sm:w-[84px] shrink-0">
+                                    <input type="number" step="0.01" min="0" max="100" id="ord-deposit-percent" oninput="onOrderDepositPercentInput()" value="0" class="w-full pl-2 pr-5 py-2 border rounded-xl outline-none font-bold text-brand-600 text-right" aria-label="Deposit percentage">
+                                    <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">%</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -5349,8 +5442,13 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 () => [...appState.customers]
                     .sort((a, b) => (a.name || '').trim().localeCompare((b.name || '').trim(), undefined, { sensitivity: 'base' }))
                     .map(c => ({ label: c.name, sub: c.phone || c.address || 'Saved Client', raw: c })),
-                (picked) => { custInput.value = picked.label; }
+                (picked) => {
+                    custInput.value = picked.label;
+                    fillOrderCustomerDetails(picked.raw);
+                    // Customer Details stays collapsed until manually opened.
+                }
             );
+            syncOrderDepositFields('amount');
             document.getElementById('modal-backdrop').classList.remove('hidden');
         }
 
@@ -5484,6 +5582,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             const sum = orderModalItems.reduce((acc, i) => acc + (Number(i.qty || 1) * Number(i.price || 0)), 0);
             const totalInput = document.getElementById('ord-total');
             if (totalInput && sum > 0) totalInput.value = sum.toFixed(2);
+            syncOrderDepositFields('total');
 
             const reqMats = computeMaterialsForOrderItems(orderModalItems, orderModalMaterials);
             const noticeEl = document.getElementById('ord-shortage-notice');
@@ -5609,11 +5708,28 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             const productSummary = cleanItems.map(i => `${i.qty}x ${i.name}`).join(', ');
             const newMaterialsUsed = computeMaterialsForOrderItems(cleanItems, orderModalMaterials);
 
-            // Resolve or create the CRM record, then store its immutable ID on the order.
-            let customerRecord = findCustomerByName(customer);
+            // Resolve or create the CRM record, including contact details entered in this order.
+            const chosenCustomerId = document.getElementById('ord-customer-id')?.value || '';
+            const chosenCustomer = chosenCustomerId
+                ? appState.customers.find(c => String(c.id) === chosenCustomerId && normalizeLinkText(c.name) === normalizeLinkText(customer))
+                : null;
+            let customerRecord = chosenCustomer || findCustomerByName(customer);
+            const contactFields = {
+                phone: document.getElementById('ord-customer-phone')?.value.trim() || '',
+                email: document.getElementById('ord-customer-email')?.value.trim() || '',
+                address: document.getElementById('ord-customer-address')?.value.trim() || '',
+                notes: document.getElementById('ord-customer-notes')?.value.trim() || ''
+            };
             if (customer && !customerRecord) {
-                customerRecord = { id: 'cust-' + Date.now(), name: customer, phone: '', email: '', address: '', notes: 'Added from order' };
+                customerRecord = { id: 'cust-' + Date.now(), name: customer, ...contactFields };
                 appState.customers.push(customerRecord);
+                logActivity('Customers', 'Added Customer from Order', customer);
+            } else if (customerRecord) {
+                const contactChanged = Object.keys(contactFields).some(key => (customerRecord[key] || '') !== contactFields[key]);
+                if (contactChanged) {
+                    Object.assign(customerRecord, contactFields);
+                    logActivity('Customers', 'Updated Customer Contact from Order', customer);
+                }
             }
             const customerId = customerRecord ? customerRecord.id : '';
 
@@ -7344,7 +7460,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                         </div>
                         <div class="two-col-grid">
                             <div>
-                                <label class="block font-bold uppercase text-slate-600 mb-1">Order / Issue Date</label>
+                                <label class="block font-bold uppercase text-slate-600 mb-1">Order Date</label>
                                 <input type="date" id="inv-date" required value="${today}" class="w-full px-2.5 py-2 border rounded-xl outline-none">
                             </div>
                             <div>
@@ -7651,6 +7767,28 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
         }
 
         // Helper to word-wrap text onto Canvas while preserving explicit line breaks and leading spaces
+        // Keep long names on one line if the receipt has no notes beside the customer.
+        // The minimum font size prevents unreadable text; exceptionally long names can still wrap.
+        function receiptCustomerNameFontSize(name, maxWidth, baseSize = 14) {
+            const ctx = document.createElement('canvas').getContext('2d');
+            if (!ctx) return baseSize;
+            for (let size = baseSize; size >= 9; size -= 0.5) {
+                ctx.font = `800 ${size}px Inter, sans-serif`;
+                if (ctx.measureText(String(name || '')).width <= maxWidth) return size;
+            }
+            return 9;
+        }
+        function receiptCustomerNameStyle(name, hasNotes, maxWidth = 440) {
+            if (hasNotes) return 'white-space:pre-wrap;';
+            const fontSize = receiptCustomerNameFontSize(name, maxWidth);
+            const ctx = document.createElement('canvas').getContext('2d');
+            if (!ctx) return `font-size:${fontSize}px;white-space:normal;`;
+            ctx.font = `800 ${fontSize}px Inter, sans-serif`;
+            return ctx.measureText(String(name || '')).width <= maxWidth
+                ? `font-size:${fontSize}px;white-space:nowrap;overflow-wrap:normal;`
+                : `font-size:${fontSize}px;white-space:normal;overflow-wrap:anywhere;`;
+        }
+
         function wrapCanvasText(ctx, text, maxWidth) {
             if (!text) return [];
             const rawLines = String(text).split('\n');
@@ -7774,14 +7912,16 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             const measureCanvas = document.createElement('canvas');
             const mCtx = measureCanvas.getContext('2d');
 
-            mCtx.font = '800 14px Inter, sans-serif';
-            const wrappedCustName = wrapCanvasText(mCtx, custLines.name || 'Customer', 235);
+            const billTextWidth = receiptOrderNotes ? 235 : width - 96;
+            const customerNameSize = receiptOrderNotes ? 14 : receiptCustomerNameFontSize(custLines.name || 'Customer', billTextWidth);
+            mCtx.font = `800 ${customerNameSize}px Inter, sans-serif`;
+            const wrappedCustName = wrapCanvasText(mCtx, custLines.name || 'Customer', billTextWidth);
 
             mCtx.font = '500 11px Inter, sans-serif';
-            const wrappedCustPhone = custLines.phone ? wrapCanvasText(mCtx, custLines.phone, 235) : [];
+            const wrappedCustPhone = custLines.phone ? wrapCanvasText(mCtx, custLines.phone, billTextWidth) : [];
 
             mCtx.font = '400 11px Inter, sans-serif';
-            const wrappedCustAddr = custLines.address ? wrapCanvasText(mCtx, custLines.address, 235) : [];
+            const wrappedCustAddr = custLines.address ? wrapCanvasText(mCtx, custLines.address, billTextWidth) : [];
 
             mCtx.font = '500 11px Inter, sans-serif';
             const wrappedOrderNotes = receiptOrderNotes ? wrapCanvasText(mCtx, receiptOrderNotes, 200) : [];
@@ -7912,7 +8052,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             ctx.fillText('BILL TO', 44, billBoxY + 18);
 
             let custLineY = billBoxY + 35;
-            ctx.font = '800 14px Inter, sans-serif';
+            ctx.font = `800 ${customerNameSize}px Inter, sans-serif`;
             ctx.fillStyle = '#0f172a';
             wrappedCustName.forEach(line => {
                 ctx.fillText(line, 44, custLineY);
@@ -8117,6 +8257,9 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 if (!source) throw new Error('Receipt preview is unavailable.');
                 // Render the full-size A5 receipt, not the mobile-shrunk on-screen preview.
                 clone = source.cloneNode(true);
+                // The exported PDF uses the full A5 width, even when previewed on a narrow iPhone.
+                const expandedBillName = clone.querySelector('.receipt-bill-info.no-receipt-notes .receipt-customer-name');
+                if (expandedBillName) expandedBillName.style.cssText = receiptCustomerNameStyle(expandedBillName.textContent, false, 450);
                 clone.removeAttribute('id');
                 clone.setAttribute('aria-hidden', 'true');
                 Object.assign(clone.style, {
@@ -8260,6 +8403,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 const linkedOrd = inv.orderId ? appState.orders.find(o => o.id === inv.orderId) : null;
                 const refOrderNo = inv.orderNo || (linkedOrd ? formatOrderNo(linkedOrd) : '');
             const receiptOrderNotes = String((inv.notes && inv.notes.trim()) || (linkedOrd && linkedOrd.remarks) || '').trim();
+            const customerNameStyle = receiptCustomerNameStyle(custLines.name, !!receiptOrderNotes, 450);
 
                 const standaloneHTML = `<!DOCTYPE html>
 <html>
@@ -8336,7 +8480,7 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             align-items: start;
             gap: 12px;
         }
-        .bill-box:not(:has(.receipt-order-notes)) { grid-template-columns: 1fr; }
+        .bill-box.no-receipt-notes { grid-template-columns: minmax(0,1fr); }
         .bill-box > div { min-width: 0; overflow-wrap: anywhere; }
         .receipt-order-notes { max-width: none; min-width: 0; text-align: left; overflow-wrap: anywhere; }
         .label-xs {
@@ -8452,10 +8596,10 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                 ${inv.paymentDate && downpayment > 0 ? `<div style="font-size:10px;color:#047857;font-weight:700;">Paid Date: ${inv.paymentDate}</div>` : ''}
             </div>
         </div>
-        <div class="bill-box receipt-bill-info">
+        <div class="bill-box receipt-bill-info ${receiptOrderNotes ? 'has-receipt-notes' : 'no-receipt-notes'}">
             <div>
                 <div class="label-xs">Bill To</div>
-                <div class="cust-name" style="white-space:pre-wrap;">${custLines.name}</div>
+                <div class="cust-name" style="${customerNameStyle}">${safeDisplay(custLines.name)}</div>
                 ${custLines.phone ? `<div class="cust-line number-format-raw" style="white-space:pre-wrap;">${custLines.phone}</div>` : ''}
                 ${custLines.address ? `<div class="cust-line" style="white-space:pre-wrap;">${custLines.address}</div>` : ''}
             </div>
@@ -8563,6 +8707,9 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
             const linkedOrd = inv.orderId ? appState.orders.find(o => o.id === inv.orderId) : null;
             const refOrderNo = inv.orderNo || (linkedOrd ? formatOrderNo(linkedOrd) : '');
             const receiptOrderNotes = String((inv.notes && inv.notes.trim()) || (linkedOrd && linkedOrd.remarks) || '').trim();
+            // The iPhone receipt preview is narrower than the printable A5 version.
+            const previewNameWidth = Math.max(175, Math.min(450, (window.innerWidth || 600) - 110));
+            const customerNameStyle = receiptCustomerNameStyle(custLines.name, !!receiptOrderNotes, previewNameWidth);
 
             const modal = document.getElementById('modal-content');
             modal.innerHTML = `
@@ -8610,10 +8757,10 @@ body.mobile-mode .receipt-preview-print[disabled] { opacity:.65; cursor:progress
                         </div>
                     </div>
 
-                    <div class="receipt-bill-info bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs gap-3">
+                    <div class="receipt-bill-info ${receiptOrderNotes ? 'has-receipt-notes' : 'no-receipt-notes'} bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs gap-3">
                         <div class="space-y-0.5">
                             <span class="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 block mb-0.5">Bill To</span>
-                            <div class="font-extrabold text-slate-900 text-sm leading-snug whitespace-pre-wrap">${custLines.name}</div>
+                            <div class="receipt-customer-name font-extrabold text-slate-900 text-sm leading-snug" style="${customerNameStyle}">${safeDisplay(custLines.name)}</div>
                             ${custLines.phone ? `<div class="number-format-raw text-xs text-slate-700 font-medium leading-snug whitespace-pre-wrap">${custLines.phone}</div>` : ''}
                             ${custLines.address ? `<div class="text-xs text-slate-600 leading-snug whitespace-pre-wrap">${custLines.address}</div>` : ''}
                         </div>
